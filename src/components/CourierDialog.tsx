@@ -73,6 +73,7 @@ export function CourierDialog({ saleId, onClose }: { saleId: string; onClose: ()
               toast.success(`Status: ${courierLabel(r.status)}`);
               qc.invalidateQueries({ queryKey: ["courier", saleId] });
               qc.invalidateQueries({ queryKey: ["sales"] });
+              qc.invalidateQueries({ queryKey: ["sales-couriers"] });
             }} />
           : <BookForm data={data} onBook={async (input) => {
               const r = await book({ data: input });
@@ -80,6 +81,7 @@ export function CourierDialog({ saleId, onClose }: { saleId: string; onClose: ()
               toast.success(`Booked · Consignment ${r.consignmentId}`);
               qc.invalidateQueries({ queryKey: ["courier", saleId] });
               qc.invalidateQueries({ queryKey: ["sales"] });
+              qc.invalidateQueries({ queryKey: ["sales-couriers"] });
               return true;
             }} />}
       </DialogContent>

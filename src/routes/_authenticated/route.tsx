@@ -10,13 +10,22 @@ import { DrawerBanner } from "@/components/DrawerGate";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
-  beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) throw redirect({ to: "/auth" });
-    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", data.user.id);
-    const list = (roles ?? []).map((r) => r.role);
-    const role = list.includes("admin") ? "admin" : list.includes("manager") ? "manager" : list.includes("cashier") ? "cashier" : null;
-    return { user: data.user, role };
+  beforeLoad: async ({ context }) => {
+    // getSession reads the saved login locally (no network); the server still checks the token on every data request.
+    const { data } = await supabase.auth.getSession();
+    const user = data.session?.user;
+    if (!user) throw redirect({ to: "/auth" });
+    const role = await context.queryClient.ensureQueryData({
+      queryKey: ["my-role", user.id],
+      staleTime: 5 * 60_000,
+      queryFn: async () => {
+        const { data: roles, error } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
+        if (error) throw error;
+        const list = (roles ?? []).map((r) => r.role);
+        return list.includes("admin") ? "admin" : list.includes("manager") ? "manager" : list.includes("cashier") ? "cashier" : null;
+      },
+    });
+    return { user, role };
   },
   component: Layout,
 });

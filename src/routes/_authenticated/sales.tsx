@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { bdDateTime, bdToday, taka } from "@/lib/format";
+import { bdDateTime, bdToday, errMsg, taka } from "@/lib/format";
 import { PAY_METHODS, returnValue, splitRefund, type PayMethod } from "@/lib/pos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,15 +39,31 @@ function SalesPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [courierId, setCourierId] = useState<string | null>(null);
 
-  const { data = [], isLoading } = useQuery({
+  const { data = [], isLoading, error: loadError } = useQuery({
     queryKey: ["sales", from, to],
     queryFn: async () => {
       const { data, error } = await supabase.from("sales")
-        .select("*, customers(name, phone), courier_orders(id, status, consignment_id)")
+        .select("*, customers(name, phone)")
         .gte("created_at", `${from}T00:00:00+06:00`).lte("created_at", `${to}T23:59:59.999+06:00`)
         .order("created_at", { ascending: false }).limit(1000);
       if (error) throw error;
       return data;
+    },
+  });
+  // Courier status is optional: if the courier table isn't set up yet, the sales list still works.
+  const saleIds = data.map((r) => r.id);
+  const { data: couriers } = useQuery({
+    queryKey: ["sales-couriers", from, to, saleIds.length],
+    enabled: saleIds.length > 0,
+    retry: false,
+    queryFn: async () => {
+      const out = new Map<string, { status: string }[]>();
+      for (let i = 0; i < saleIds.length; i += 150) {
+        const { data: c, error } = await supabase.from("courier_orders").select("sale_id, status").in("sale_id", saleIds.slice(i, i + 150));
+        if (error) return out;
+        for (const x of c ?? []) out.set(x.sale_id, [...(out.get(x.sale_id) ?? []), { status: x.status }]);
+      }
+      return out;
     },
   });
   const rows = useMemo(() => {
@@ -75,7 +91,8 @@ function SalesPage() {
           </thead>
           <tbody>
             {isLoading && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">Loading…</td></tr>}
-            {!isLoading && rows.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No sales found for this period.</td></tr>}
+            {loadError && <tr><td colSpan={7} className="p-6 text-center text-destructive">Could not load sales: {errMsg(loadError)}</td></tr>}
+            {!isLoading && !loadError && rows.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No sales found for this period.</td></tr>}
             {rows.map((r) => {
               const st = STATUS[r.status] ?? { label: r.status, v: "outline" as const };
               return (
@@ -88,7 +105,7 @@ function SalesPage() {
                   <td className="p-2"><Badge variant={st.v}>{st.label}</Badge></td>
                   <td className="p-2" onClick={(e) => e.stopPropagation()}>
                     {(() => {
-                      const c = (r.courier_orders ?? []).find((x) => x.status !== "cancelled");
+                      const c = (couriers?.get(r.id) ?? []).find((x) => x.status !== "cancelled");
                       if (c) return (
                         <button type="button" onClick={() => setCourierId(r.id)} className="text-left">
                           <Badge variant={COURIER_STATUS[c.status]?.tone ?? "outline"}><Truck className="mr-1 h-3 w-3" />{COURIER_STATUS[c.status]?.label ?? c.status}</Badge>
@@ -120,7 +137,7 @@ function SaleDetail({ saleId, isMgr, onClose }: { saleId: string | null; isMgr: 
   const [key, setKey] = useState(() => crypto.randomUUID());
   const [receipt, setReceipt] = useState<string | null>(null);
 
-  const { data } = useQuery({
+  const { data, error: detailError } = useQuery({
     queryKey: ["sale-detail", saleId],
     enabled: !!saleId,
     queryFn: async () => {
@@ -171,6 +188,7 @@ function SaleDetail({ saleId, isMgr, onClose }: { saleId: string | null; isMgr: 
     <>
       <Dialog open={!!saleId} onOpenChange={(o) => !o && close()}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          {detailError && <p className="text-sm text-destructive">Could not load this sale: {errMsg(detailError)}</p>}
           <DialogHeader><DialogTitle>{s ? `${s.invoice_no} · ${bdDateTime(s.created_at)}` : "Loading…"}</DialogTitle></DialogHeader>
           {data && s && (
             <div className="space-y-4 text-sm">

@@ -25,6 +25,7 @@ export async function fetchAll<T>(
 
 export const medicinesQuery = queryOptions({
   queryKey: ["medicines"],
+  staleTime: 2 * 60_000,
   queryFn: async (): Promise<MedicineWithBatches[]> => {
     const [meds, batches] = await Promise.all([
       fetchAll<Medicine>((a, b) => supabase.from("medicines").select("*").order("name").order("id").range(a, b)),
@@ -48,6 +49,7 @@ const DEFAULT_SETTINGS: Settings = {
 
 export const settingsQuery = queryOptions({
   queryKey: ["settings"],
+  staleTime: 10 * 60_000,
   queryFn: async (): Promise<Settings> => {
     const { data, error } = await supabase.from("settings").select("*").eq("id", 1).maybeSingle();
     if (error) throw error;
@@ -57,6 +59,7 @@ export const settingsQuery = queryOptions({
 
 export const suppliersQuery = queryOptions({
   queryKey: ["suppliers"],
+  staleTime: 5 * 60_000,
   queryFn: async () => {
     const { data, error } = await supabase.from("suppliers").select("*").eq("is_active", true).order("name");
     if (error) throw error;
@@ -66,6 +69,7 @@ export const suppliersQuery = queryOptions({
 
 export const customersQuery = queryOptions({
   queryKey: ["customers"],
+  staleTime: 2 * 60_000,
   queryFn: async () => {
     return fetchAll<Database["public"]["Tables"]["customers"]["Row"]>((a, b) =>
       supabase.from("customers").select("*").order("name").order("id").range(a, b),
