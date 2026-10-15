@@ -10,11 +10,30 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 */
 const BASE = () => (process.env["STEADFAST_BASE_URL"] || "https://portal.packzy.com/api/v1").replace(/\/+$/, "");
 
+// Accept the common spellings people use when adding the variables.
+const API_NAMES = ["STEADFAST_API_KEY", "VITE_STEADFAST_API_KEY", "STEADFAST_APIKEY", "STEADFAST_KEY"];
+const SECRET_NAMES = ["STEADFAST_SECRET_KEY", "VITE_STEADFAST_SECRET_KEY", "STEADFAST_SECRET", "STEADFAST_API_SECRET"];
+const pick = (names: string[]) => {
+  for (const n of names) {
+    const v = process.env[n]?.trim().replace(/^["']|["']$/g, "");
+    if (v) return v;
+  }
+  return "";
+};
+
 function keys() {
-  const apiKey = process.env["STEADFAST_API_KEY"];
-  const secretKey = process.env["STEADFAST_SECRET_KEY"];
+  const apiKey = pick(API_NAMES);
+  const secretKey = pick(SECRET_NAMES);
   if (!apiKey || !secretKey) return null;
   return { "Api-Key": apiKey, "Secret-Key": secretKey, "Content-Type": "application/json", Accept: "application/json" };
+}
+
+/** Which variable is missing on this server (names only, never values). */
+function missingMessage() {
+  const miss = [!pick(API_NAMES) && "STEADFAST_API_KEY", !pick(SECRET_NAMES) && "STEADFAST_SECRET_KEY"].filter(Boolean);
+  const seen = Object.keys(process.env).filter((k) => k.toUpperCase().includes("STEADFAST"));
+  return `Steadfast is not set up on this server — missing ${miss.join(" and ")}.` +
+    (seen.length ? ` Found: ${seen.join(", ")} (check spelling).` : " No STEADFAST variable is visible to the server: add it in Vercel/Lovable settings (not the .env file) and redeploy.");
 }
 
 const BD_PHONE = /^01[3-9]\d{8}$/;
@@ -62,7 +81,7 @@ export const bookSteadfast = createServerFn({ method: "POST" })
     const { data: isStaff } = await sb.rpc("is_staff", { _user_id: context.userId });
     if (!isStaff) return { ok: false as const, error: "Not allowed" };
     const headers = keys();
-    if (!headers) return { ok: false as const, error: "Steadfast is not set up. Add STEADFAST_API_KEY and STEADFAST_SECRET_KEY in the server settings." };
+    if (!headers) return { ok: false as const, error: missingMessage() };
 
     const { data: sale, error: saleErr } = await sb.from("sales").select("id, invoice_no, status").eq("id", data.saleId).maybeSingle();
     if (saleErr || !sale) return { ok: false as const, error: "Sale not found" };
@@ -128,7 +147,7 @@ export const refreshSteadfastStatus = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const sb = context.supabase;
     const headers = keys();
-    if (!headers) return { ok: false as const, error: "Steadfast is not set up" };
+    if (!headers) return { ok: false as const, error: missingMessage() };
     const { data: row } = await sb.from("courier_orders").select("id, consignment_id").eq("id", data.courierId).maybeSingle();
     if (!row) return { ok: false as const, error: "Courier booking not found" };
     let res: Response;
@@ -150,9 +169,11 @@ export const steadfastBalance = createServerFn({ method: "POST" })
     const { data: isMgr } = await context.supabase.rpc("is_manager", { _user_id: context.userId });
     if (!isMgr) return { ok: false as const, error: "Managers only" };
     const headers = keys();
-    if (!headers) return { ok: false as const, error: "Steadfast is not set up" };
+    if (!headers) return { ok: false as const, error: missingMessage() };
     const res = await fetch(`${BASE()}/get_balance`, { headers }).catch(() => null);
-    const json = (await res?.json().catch(() => null)) as { current_balance?: number } | null;
-    if (!res?.ok || json?.current_balance == null) return { ok: false as const, error: "Could not read balance" };
+    if (!res) return { ok: false as const, error: "Could not reach Steadfast from the server" };
+    const json = (await res.json().catch(() => null)) as { current_balance?: number; message?: string } | null;
+    if (res.status === 401 || res.status === 403) return { ok: false as const, error: "Steadfast rejected the keys (Unauthorized). Copy the API key and Secret key again." };
+    if (!res.ok || json?.current_balance == null) return { ok: false as const, error: json?.message || `Steadfast answered ${res.status}` };
     return { ok: true as const, balance: Number(json.current_balance) };
   });

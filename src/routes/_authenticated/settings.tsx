@@ -11,6 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useServerFn } from "@tanstack/react-start";
+import { Truck } from "lucide-react";
+import { steadfastBalance } from "@/lib/courier.functions";
+import { taka } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings & Staff — Pharmacy POS" }, { name: "description", content: "Pharmacy details, receipt and staff roles." }] }),
@@ -27,6 +31,7 @@ function SettingsPage() {
     <div className="mx-auto max-w-4xl space-y-8">
       <h1 className="text-2xl font-semibold">Settings & Staff</h1>
       <ShopSettings />
+      <CourierCheck />
       <Staff myId={user.id} />
     </div>
   );
@@ -151,6 +156,27 @@ function Staff({ myId }: { myId: string }) {
             ))}
           </TableBody>
         </Table>
+      </div>
+    </section>
+  );
+}
+
+function CourierCheck() {
+  const check = useServerFn(steadfastBalance);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  return (
+    <section className="rounded-lg border p-4">
+      <h2 className="flex items-center gap-2 font-semibold"><Truck className="h-4 w-4 text-primary" />Steadfast courier</h2>
+      <p className="text-sm text-muted-foreground">Keys live in the server settings (STEADFAST_API_KEY, STEADFAST_SECRET_KEY), never in the app. Test them here.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Button variant="outline" disabled={busy} onClick={async () => {
+          setBusy(true);
+          const r = await check().catch((e) => ({ ok: false as const, error: errMsg(e) }));
+          setResult(r.ok ? { ok: true, text: `Connected · balance ${taka(r.balance)}` } : { ok: false, text: r.error });
+          setBusy(false);
+        }}>{busy ? "Checking…" : "Test connection"}</Button>
+        {result && <span className={result.ok ? "text-sm font-medium text-primary" : "text-sm text-destructive"}>{result.text}</span>}
       </div>
     </section>
   );
