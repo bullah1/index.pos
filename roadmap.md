@@ -1,0 +1,14 @@
+# Roadmap
+- [x] Login, roles, full database setup, layout
+- [x] POS counter with FEFO, split payments, receipts (thermal/A4)
+- [x] Inventory with batches, expiry/low-stock alerts, CSV export
+- [x] Purchases (stock receiving)
+- [x] Sales history, returns and cancellations
+- [x] Customers & due collection
+- [x] Suppliers page and supplier payments
+- [x] Expenses
+- [x] Dashboard with daily sales & profit report
+- [ ] More reports (stock value, supplier dues)
+- [x] Staff & permissions, settings pages
+- [ ] CSV import
+- [x] AI assistant for managers (sales, dues, expenses)
