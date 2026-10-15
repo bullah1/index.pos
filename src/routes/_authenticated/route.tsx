@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
-import { BarChart3, Boxes, Building2, Coins, History, LayoutDashboard, Receipt as ReceiptIcon, Settings, Sparkles, Users, LogOut, Menu, Pill, ShoppingCart, Truck, Wallet } from "lucide-react";
+import { BarChart3, Boxes, ClipboardList, Building2, Coins, History, LayoutDashboard, Receipt as ReceiptIcon, Settings, Sparkles, Users, LogOut, Menu, Pill, ShoppingCart, Truck, Wallet } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ const NAV = [
   { to: "/sales", label: "Sales History", icon: History, mgr: false, admin: false },
   { to: "/cash-drawer", label: "Cash Drawer", icon: Wallet, mgr: false, admin: false },
   { to: "/inventory", label: "Medicines / Inventory", icon: Boxes, mgr: false, admin: false },
+  { to: "/stock-adjustments", label: "Stock Adjustments", icon: ClipboardList, mgr: true, admin: false },
   { to: "/customers", label: "Customers & Due", icon: Users, mgr: false, admin: false },
   { to: "/purchases", label: "Purchases", icon: Truck, mgr: true, admin: false },
   { to: "/suppliers", label: "Suppliers", icon: Building2, mgr: true, admin: false },

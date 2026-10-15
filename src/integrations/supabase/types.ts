@@ -756,6 +756,69 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_adjustments: {
+        Row: {
+          adj_no: string
+          batch_id: string
+          created_at: string
+          created_by: string
+          id: string
+          idempotency_key: string
+          medicine_id: string
+          note: string | null
+          qty_after: number
+          qty_before: number
+          qty_change: number
+          reason: string
+          unit_cost: number
+        }
+        Insert: {
+          adj_no?: string
+          batch_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          idempotency_key?: string
+          medicine_id?: string
+          note?: string | null
+          qty_after?: number
+          qty_before?: number
+          qty_change?: number
+          reason?: string
+          unit_cost?: number
+        }
+        Update: {
+          adj_no?: string
+          batch_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          idempotency_key?: string
+          medicine_id?: string
+          note?: string | null
+          qty_after?: number
+          qty_before?: number
+          qty_change?: number
+          reason?: string
+          unit_cost?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_adjustments_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "medicine_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_adjustments_medicine_id_fkey"
+            columns: ["medicine_id"]
+            isOneToOne: false
+            referencedRelation: "medicines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_movements: {
         Row: {
           batch_id: string
@@ -907,6 +970,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      adjust_stock: { Args: { p: Json }; Returns: Json }
       admin_set_role: {
         Args: { p_user: string; p_role: Database["public"]["Enums"]["app_role"] | null }
         Returns: undefined

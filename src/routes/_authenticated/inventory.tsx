@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { medicinesQuery, settingsQuery, type Medicine } from "@/lib/queries";
+import { medicinesQuery, settingsQuery, type Batch, type Medicine, type MedicineWithBatches } from "@/lib/queries";
 import { sellableStock } from "@/lib/pos";
 import { bdToday, daysUntil, errMsg, taka } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdjustBatchDialog, NewBatchDialog } from "@/components/StockAdjust";
 
 export const Route = createFileRoute("/_authenticated/inventory")({
   head: () => ({ meta: [{ title: "Inventory — Pharmacy POS" }, { name: "description", content: "Medicines, batches, stock and expiry." }] }),
@@ -32,6 +33,8 @@ function InventoryPage() {
   const [open, setOpen] = useState<string | null>(null);
   const [limit, setLimit] = useState(100);
   const [editing, setEditing] = useState<Partial<Medicine> | null>(null);
+  const [adjusting, setAdjusting] = useState<{ m: MedicineWithBatches; b: Batch } | null>(null);
+  const [adding, setAdding] = useState<MedicineWithBatches | null>(null);
   const today = bdToday();
   const low = settings?.low_stock_threshold ?? 10;
   const alertDays = settings?.expiry_alert_days ?? 90;
@@ -118,9 +121,14 @@ function InventoryPage() {
                 </tr>
                 {open === m.id && (
                   <tr className="border-b bg-muted/30"><td /><td colSpan={6} className="p-2">
-                    {m.batches.length === 0 ? <p className="text-xs text-muted-foreground">No batches yet. Receive stock from Purchases.</p> : (
+                    {isMgr && (
+                      <div className="mb-2 flex justify-end">
+                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAdding(m)}><Plus className="mr-1 h-3 w-3" />Add stock (opening)</Button>
+                      </div>
+                    )}
+                    {m.batches.length === 0 ? <p className="text-xs text-muted-foreground">No batches yet. Receive stock from Purchases{isMgr ? " or use “Add stock”" : ""}.</p> : (
                       <table className="w-full text-xs">
-                        <thead className="text-left text-muted-foreground"><tr><th className="py-1">Batch</th><th>Expiry</th><th>Qty</th><th>Cost</th><th>Price</th><th /></tr></thead>
+                        <thead className="text-left text-muted-foreground"><tr><th className="py-1">Batch</th><th>Expiry</th><th>Qty</th><th>Cost</th><th>Price</th><th /><th /></tr></thead>
                         <tbody>{m.batches.map((b) => {
                           const d = daysUntil(b.expiry_date, today);
                           const nextId = m.batches.find((x) => x.expiry_date > today && Number(x.qty_on_hand) > 0)?.id;
@@ -129,6 +137,7 @@ function InventoryPage() {
                               <td className="py-1">{b.batch_no}{b.id === nextId && <Badge variant="secondary" className="ml-1">sells next</Badge>}</td>
                               <td>{b.expiry_date}</td><td>{Number(b.qty_on_hand)}</td><td>{taka(b.unit_cost)}</td><td>{taka(b.sale_price)}</td>
                               <td>{d <= 0 ? <Badge variant="destructive">Expired</Badge> : d <= alertDays ? <span className="text-warning-foreground">{d} days left</span> : null}</td>
+                              <td className="text-right">{isMgr && <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAdjusting({ m, b })}>Adjust</Button>}</td>
                             </tr>
                           );
                         })}</tbody>
@@ -148,6 +157,8 @@ function InventoryPage() {
         </div>
       )}
       {editing && <MedicineDialog value={editing} onClose={() => setEditing(null)} />}
+      {adjusting && <AdjustBatchDialog medicine={adjusting.m} batch={adjusting.b} onClose={() => setAdjusting(null)} />}
+      {adding && <NewBatchDialog medicine={adding} onClose={() => setAdding(null)} />}
     </div>
   );
 }

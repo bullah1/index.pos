@@ -23,6 +23,7 @@ import { Route as AuthenticatedPurchasesRouteImport } from './routes/_authentica
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedSalesRouteImport } from './routes/_authenticated/sales'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedStockAdjustmentsRouteImport } from './routes/_authenticated/stock-adjustments'
 import { Route as AuthenticatedSupplierPaymentsRouteImport } from './routes/_authenticated/supplier-payments'
 import { Route as AuthenticatedSuppliersRouteImport } from './routes/_authenticated/suppliers'
 
@@ -95,6 +96,12 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedStockAdjustmentsRoute =
+  AuthenticatedStockAdjustmentsRouteImport.update({
+    id: '/stock-adjustments',
+    path: '/stock-adjustments',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSupplierPaymentsRoute =
   AuthenticatedSupplierPaymentsRouteImport.update({
     id: '/supplier-payments',
@@ -121,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/sales': typeof AuthenticatedSalesRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/stock-adjustments': typeof AuthenticatedStockAdjustmentsRoute
   '/supplier-payments': typeof AuthenticatedSupplierPaymentsRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
 }
@@ -138,6 +146,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/sales': typeof AuthenticatedSalesRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/stock-adjustments': typeof AuthenticatedStockAdjustmentsRoute
   '/supplier-payments': typeof AuthenticatedSupplierPaymentsRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
 }
@@ -157,6 +166,7 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/sales': typeof AuthenticatedSalesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/stock-adjustments': typeof AuthenticatedStockAdjustmentsRoute
   '/_authenticated/supplier-payments': typeof AuthenticatedSupplierPaymentsRoute
   '/_authenticated/suppliers': typeof AuthenticatedSuppliersRoute
 }
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/sales'
     | '/settings'
+    | '/stock-adjustments'
     | '/supplier-payments'
     | '/suppliers'
   fileRoutesByTo: FileRoutesByTo
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/sales'
     | '/settings'
+    | '/stock-adjustments'
     | '/supplier-payments'
     | '/suppliers'
   id:
@@ -211,6 +223,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/sales'
     | '/_authenticated/settings'
+    | '/_authenticated/stock-adjustments'
     | '/_authenticated/supplier-payments'
     | '/_authenticated/suppliers'
   fileRoutesById: FileRoutesById
@@ -321,6 +334,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/stock-adjustments': {
+      id: '/_authenticated/stock-adjustments'
+      path: '/stock-adjustments'
+      fullPath: '/stock-adjustments'
+      preLoaderRoute: typeof AuthenticatedStockAdjustmentsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/supplier-payments': {
       id: '/_authenticated/supplier-payments'
       path: '/supplier-payments'
@@ -350,6 +370,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSalesRoute: typeof AuthenticatedSalesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedStockAdjustmentsRoute: typeof AuthenticatedStockAdjustmentsRoute
   AuthenticatedSupplierPaymentsRoute: typeof AuthenticatedSupplierPaymentsRoute
   AuthenticatedSuppliersRoute: typeof AuthenticatedSuppliersRoute
 }
@@ -366,6 +387,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSalesRoute: AuthenticatedSalesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedStockAdjustmentsRoute: AuthenticatedStockAdjustmentsRoute,
   AuthenticatedSupplierPaymentsRoute: AuthenticatedSupplierPaymentsRoute,
   AuthenticatedSuppliersRoute: AuthenticatedSuppliersRoute,
 }
