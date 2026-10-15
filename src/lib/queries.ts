@@ -72,3 +72,24 @@ export const customersQuery = queryOptions({
     );
   },
 });
+
+export type DrawerState = { status: "none" | "open" | "closed"; id: string | null; opening: number };
+
+/** The signed-in staff member's cash drawer for today (Bangladesh date). */
+export const myDrawerQuery = (userId: string) =>
+  queryOptions({
+    queryKey: ["my-drawer", userId],
+    queryFn: async (): Promise<DrawerState> => {
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka" }).format(new Date());
+      const { data, error } = await supabase
+        .from("cash_drawers")
+        .select("id, opening, closed_at")
+        .eq("user_id", userId)
+        .eq("drawer_date", today)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return { status: "none", id: null, opening: 0 };
+      return { status: data.closed_at ? "closed" : "open", id: data.id, opening: Number(data.opening) };
+    },
+    refetchInterval: 60_000,
+  });

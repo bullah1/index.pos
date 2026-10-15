@@ -912,6 +912,8 @@ export type Database = {
         Returns: undefined
       }
       cash_drawer_close: { Args: { p: Json }; Returns: Json }
+      delete_expense: { Args: { p_id: string }; Returns: undefined }
+      drawer_is_open: { Args: { _user_id: string }; Returns: boolean }
       cash_drawer_open: { Args: { p: Json }; Returns: Json }
       collect_due: { Args: { p: Json }; Returns: Json }
       customer_dues: {

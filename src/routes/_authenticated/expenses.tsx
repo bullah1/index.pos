@@ -9,6 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { bdToday, errMsg, taka } from "@/lib/format";
+import { Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useMyDrawer } from "@/components/DrawerGate";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
   head: () => ({
@@ -31,8 +37,11 @@ type Method = (typeof METHODS)[number];
 function monthStart(d: string) { return d.slice(0, 8) + "01"; }
 
 function Expenses() {
-  const { role } = Route.useRouteContext();
+  const { role, user } = Route.useRouteContext();
   const qc = useQueryClient();
+  const drawer = useMyDrawer(user.id);
+  const drawerOpen = drawer.data?.status === "open";
+  const [toDelete, setToDelete] = useState<{ id: string; category: string; amount: number; expense_date: string } | null>(null);
   const today = bdToday();
   const [from, setFrom] = useState(monthStart(today));
   const [to, setTo] = useState(today);
@@ -58,6 +67,21 @@ function Expenses() {
       setF({ ...f, amount: "", note: "" });
       qc.invalidateQueries({ queryKey: ["expenses"] });
       qc.invalidateQueries({ queryKey: ["report"] });
+    },
+    onError: (e) => toast.error(errMsg(e)),
+  });
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc("delete_expense", { p_id: id });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Expense removed");
+      setToDelete(null);
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["report"] });
+      qc.invalidateQueries({ queryKey: ["report-period"] });
+      qc.invalidateQueries({ queryKey: ["cash-drawer"] });
     },
     onError: (e) => toast.error(errMsg(e)),
   });
@@ -87,7 +111,7 @@ function Expenses() {
           </Select>
         </div>
         <div><Label htmlFor="n">Note</Label><Input id="n" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></div>
-        <Button type="submit" disabled={add.isPending}>Add expense</Button>
+        <Button type="submit" disabled={add.isPending || !drawerOpen} title={drawerOpen ? undefined : "Open the cash drawer first"}>Add expense</Button>
       </form>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -102,21 +126,54 @@ function Expenses() {
       )}
       <div className="rounded-lg border">
         <Table>
-          <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Category</TableHead><TableHead>Paid by</TableHead><TableHead>Note</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Category</TableHead><TableHead>Paid by</TableHead><TableHead>Note</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
           <TableBody>
-            {list.isLoading && <TableRow><TableCell colSpan={5} className="text-muted-foreground">Loading…</TableCell></TableRow>}
-            {!list.isLoading && rows.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No expenses in this period.</TableCell></TableRow>}
+            {list.isLoading && <TableRow><TableCell colSpan={6} className="text-muted-foreground">Loading…</TableCell></TableRow>}
+            {!list.isLoading && rows.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No expenses in this period.</TableCell></TableRow>}
             {rows.map((r) => (
               <TableRow key={r.id}>
                 <TableCell>{r.expense_date}</TableCell><TableCell>{r.category}</TableCell>
                 <TableCell className="capitalize">{r.method}</TableCell><TableCell className="text-muted-foreground">{r.note}</TableCell>
                 <TableCell className="text-right font-medium">{taka(r.amount)}</TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove expense"
+                    disabled={!drawerOpen}
+                    title={drawerOpen ? "Remove" : "Open the cash drawer first"}
+                    onClick={() => setToDelete({ id: r.id, category: r.category, amount: Number(r.amount), expense_date: r.expense_date })}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
-      <p className="text-xs text-muted-foreground">Expenses can't be edited or deleted, so the records stay trustworthy.</p>
+      <p className="text-xs text-muted-foreground">A removed expense is kept in the audit log (who removed it and when). Adding or removing needs an open cash drawer.</p>
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this expense?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {toDelete && `${toDelete.category} · ${taka(toDelete.amount)} · ${toDelete.expense_date}. Reports and the cash drawer will update.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={remove.isPending}
+              onClick={(e) => { e.preventDefault(); if (toDelete) remove.mutate(toDelete.id); }}
+            >
+              {remove.isPending ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

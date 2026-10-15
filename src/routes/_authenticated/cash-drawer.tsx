@@ -111,6 +111,7 @@ function CashDrawer() {
       setOpening("");
       setNote("");
       qc.invalidateQueries({ queryKey: ["cash-drawer"] });
+      qc.invalidateQueries({ queryKey: ["my-drawer"] });
     },
     onError: (e) => toast.error(errMsg(e)),
   });
@@ -128,6 +129,7 @@ function CashDrawer() {
       setCounted("");
       setNote("");
       qc.invalidateQueries({ queryKey: ["cash-drawer"] });
+      qc.invalidateQueries({ queryKey: ["my-drawer"] });
     },
     onError: (e) => toast.error(errMsg(e)),
   });

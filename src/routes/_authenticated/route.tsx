@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { DrawerBanner } from "@/components/DrawerGate";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -105,6 +106,7 @@ function Layout() {
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></Button>
           <span className="font-semibold">Pharmacy POS</span>
         </header>
+        {path !== "/pos" && <DrawerBanner userId={user.id} />}
         <main className="flex-1 p-3 md:p-6"><Outlet /></main>
       </div>
     </div>

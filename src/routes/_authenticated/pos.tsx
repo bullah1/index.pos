@@ -27,12 +27,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ReceiptDialog } from "@/components/Receipt";
 import { SearchSelect } from "@/components/SearchSelect";
+import { DrawerGate } from "@/components/DrawerGate";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/pos")({
   head: () => ({ meta: [{ title: "POS Counter — Pharmacy POS" }, { name: "description", content: "Sell medicines at the counter." }] }),
-  component: PosPage,
+  component: PosRoute,
 });
+
+function PosRoute() {
+  const { user } = Route.useRouteContext();
+  return (
+    <DrawerGate userId={user.id}>
+      <PosPage />
+    </DrawerGate>
+  );
+}
 
 const WALKIN = "walkin";
 const num = (v: string) => {
