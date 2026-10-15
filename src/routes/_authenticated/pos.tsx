@@ -58,6 +58,8 @@ function PosPage() {
   const qc = useQueryClient();
   const { data: meds = [], isLoading, error: medsError } = useQuery(medicinesQuery);
   const { data: customers = [] } = useQuery(customersQuery);
+  const { role } = Route.useRouteContext();
+  const isMgr = role === "admin" || role === "manager";
   const today = bdToday();
   const searchRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
@@ -90,7 +92,7 @@ function PosPage() {
   const priced: CartLine[] = useMemo(
     () => cart.map((l) => {
       const m = medById.get(l.medicine_id);
-      return m ? { ...l, gross: fefoGross(m.batches, l.qty, today) } : l;
+      return m ? { ...l, gross: fefoGross(m.batches, l.qty, today, l.price) } : l;
     }),
     [cart, medById, today],
   );
@@ -130,6 +132,37 @@ function PosPage() {
     searchRef.current?.focus();
   }
   const update = (id: string, patch: Partial<CartLine>) => setCart((c) => c.map((l) => (l.medicine_id === id ? { ...l, ...patch } : l)));
+  /** Highest batch cost among the batches this line will sell from. */
+  const maxCost = (l: CartLine) => {
+    const m = medById.get(l.medicine_id);
+    if (!m) return 0;
+    return Math.max(0, ...fefoAllocate(m.batches, l.qty, today).allocations.map((a) => Number(a.batch.unit_cost ?? 0)));
+  };
+  const priceField = (l: CartLine, prices: number[], className: string) => {
+    const below = l.price != null && l.price < maxCost(l);
+    return (
+      <div>
+        <Input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="0.01"
+          aria-label="Selling price"
+          title="Change the selling price for this line"
+          placeholder={prices.length > 1 ? prices.map((x) => x.toFixed(2)).join("/") : (prices[0] ?? l.unit_price).toFixed(2)}
+          value={l.price ?? ""}
+          className={cn(className, l.price != null && "border-primary font-semibold", below && "border-destructive")}
+          onChange={(e) => update(l.medicine_id, { price: e.target.value === "" ? undefined : num(e.target.value) })}
+        />
+        {l.price != null && (
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            list <span className="line-through">{prices.map((x) => taka(x)).join("/")}</span>
+            {below && <span className={cn("ml-1 font-medium", isMgr ? "text-warning-foreground" : "text-destructive")}>below cost</span>}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   function reset() {
     setCart([]);
@@ -146,6 +179,10 @@ function PosPage() {
     const hasCustomer = customerId !== WALKIN;
     const err = validateCart(priced, bill, pays, hasCustomer);
     if (err) { toast.error(err); return; }
+    if (!isMgr) {
+      const low = priced.find((l) => l.price != null && l.price < maxCost(l));
+      if (low) { toast.error(`Price for ${low.name} is below cost. Only a manager can sell below cost.`); return; }
+    }
     setBusy(true);
     const toSave = settlePayments(pays, totals.change);
     const cashGiven = pays.filter((p) => p.method === "cash").reduce((s, p) => s + p.amount, 0);
@@ -154,7 +191,7 @@ function PosPage() {
         idempotency_key: idemKey,
         customer_id: hasCustomer ? customerId : null,
         bill_discount: bill,
-        items: cart.map((l) => ({ medicine_id: l.medicine_id, qty: l.qty, discount: l.discount })),
+        items: cart.map((l) => ({ medicine_id: l.medicine_id, qty: l.qty, discount: l.discount, ...(l.price != null ? { unit_price: l.price } : {}) })),
         payments: toSave,
       } as never,
     });
@@ -256,14 +293,19 @@ function PosPage() {
               {priced.map((l) => {
                 const m = medById.get(l.medicine_id);
                 const alloc = m ? fefoAllocate(m.batches, l.qty, today).allocations : [];
+                const prices = [...new Set(alloc.map((a) => Number(a.batch.sale_price)))];
                 return (
                   <li key={l.medicine_id} className="space-y-2 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-medium">{l.name}</div>
-                        <div className="text-xs text-muted-foreground">{alloc.map((a) => `${a.batch.batch_no} ×${a.qty} @ ${taka(a.batch.sale_price)}`).join(", ")}</div>
+                        <div className="text-xs text-muted-foreground">{alloc.map((a) => `${a.batch.batch_no} ×${a.qty}`).join(", ")}</div>
                       </div>
                       <div className="shrink-0 text-right font-semibold">{taka(lineTotal(l))}</div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">Price ৳</span>
+                      {priceField(l, prices, "h-9 w-28 px-2")}
                     </div>
                     <div className="flex items-center gap-2">
                       <Button size="icon" variant="outline" className="h-9 w-9" aria-label="Decrease" onClick={() => update(l.medicine_id, { qty: Math.max(1, l.qty - 1) })}><Minus className="h-4 w-4" /></Button>
@@ -305,9 +347,7 @@ function PosPage() {
                             {alloc.map((a) => `${a.batch.batch_no} (exp ${a.batch.expiry_date}) ×${a.qty}`).join(", ")}
                           </div>
                         </td>
-                        <td className="whitespace-nowrap p-2">
-                          {prices.length > 1 ? prices.map((x) => taka(x)).join(" / ") : taka(prices[0] ?? l.unit_price)}
-                        </td>
+                        <td className="p-2">{priceField(l, prices, "h-8 w-24 px-2")}</td>
                         <td className="p-2">
                           <div className="flex items-center gap-1">
                             <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Decrease" onClick={() => update(l.medicine_id, { qty: Math.max(1, l.qty - 1) })}>

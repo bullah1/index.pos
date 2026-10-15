@@ -16,7 +16,9 @@ export interface CartLine {
   discount: number; // line discount in taka
   available: number; // sellable (non-expired) stock
   /** Exact line amount before discount when FEFO splits the qty across batches with different prices. */
-  gross?: number;
+  gross?: number | undefined;
+  /** Price typed at the counter; replaces the batch price for every unit of this line. */
+  price?: number | undefined;
 }
 
 export interface Payment {
@@ -95,6 +97,7 @@ export interface BatchLite {
   qty_on_hand: number;
   sale_price: number;
   created_at?: string;
+  unit_cost?: number;
 }
 
 /** First-Expiry-First-Out allocation preview. Mirrors the database rule. */
@@ -113,10 +116,10 @@ export function fefoAllocate(batches: BatchLite[], qty: number, today: string) {
   return { allocations: out, shortBy: Math.max(0, need) };
 }
 
-/** Exact amount for qty under FEFO (each batch at its own price), matching post_sale rounding. */
-export function fefoGross(batches: BatchLite[], qty: number, today: string) {
+/** Exact amount for qty under FEFO (each batch at its own price, or the counter price), matching post_sale rounding. */
+export function fefoGross(batches: BatchLite[], qty: number, today: string, price?: number) {
   const { allocations } = fefoAllocate(batches, qty, today);
-  return t(allocations.reduce((s, a) => s + p(a.qty * Number(a.batch.sale_price)), 0));
+  return t(allocations.reduce((s, a) => s + p(a.qty * (price ?? Number(a.batch.sale_price))), 0));
 }
 
 export function sellableStock(batches: BatchLite[], today: string) {

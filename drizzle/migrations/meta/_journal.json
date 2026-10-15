@@ -50,6 +50,13 @@
       "when": 1792040000000,
       "tag": "0006_drawer_gate_expense_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792045000000,
+      "tag": "0007_sale_price_override",
+      "breakpoints": true
     }
   ]
 }

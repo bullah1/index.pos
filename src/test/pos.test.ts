@@ -41,6 +41,7 @@ describe("POS totals", () => {
       { id: "b", batch_no: "B", expiry_date: "2028-01-01", qty_on_hand: 50, sale_price: 2.5 },
     ];
     expect(fefoGross(b, 3, "2026-10-15")).toBe(6.5);
+    expect(fefoGross(b, 3, "2026-10-15", 2.2)).toBe(6.6); // counter price applies to every batch
     expect(computeTotals([line({ qty: 3, unit_price: 2, gross: 6.5 })], 0, []).payable).toBe(6.5);
   });
 });
