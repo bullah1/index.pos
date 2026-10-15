@@ -64,6 +64,13 @@
       "when": 1792050000000,
       "tag": "0008_stock_adjustments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792055000000,
+      "tag": "0009_courier_orders",
+      "breakpoints": true
     }
   ]
 }

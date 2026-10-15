@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ReceiptDialog } from "@/components/Receipt";
+import { CourierDialog, COURIER_STATUS } from "@/components/CourierDialog";
+import { Truck } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/sales")({
   head: () => ({ meta: [{ title: "Sales History — Pharmacy POS" }, { name: "description", content: "Find invoices, view sale details, process returns and cancellations." }] }),
@@ -35,12 +37,13 @@ function SalesPage() {
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(bdToday());
   const [openId, setOpenId] = useState<string | null>(null);
+  const [courierId, setCourierId] = useState<string | null>(null);
 
   const { data = [], isLoading } = useQuery({
     queryKey: ["sales", from, to],
     queryFn: async () => {
       const { data, error } = await supabase.from("sales")
-        .select("*, customers(name, phone)")
+        .select("*, customers(name, phone), courier_orders(id, status, consignment_id)")
         .gte("created_at", `${from}T00:00:00+06:00`).lte("created_at", `${to}T23:59:59.999+06:00`)
         .order("created_at", { ascending: false }).limit(1000);
       if (error) throw error;
@@ -68,11 +71,11 @@ function SalesPage() {
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
-            <tr><th className="p-2">Invoice</th><th className="p-2">Date</th><th className="p-2">Customer</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Due</th><th className="p-2">Status</th></tr>
+            <tr><th className="p-2">Invoice</th><th className="p-2">Date</th><th className="p-2">Customer</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Due</th><th className="p-2">Status</th><th className="p-2">Courier</th></tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">Loading…</td></tr>}
-            {!isLoading && rows.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No sales found for this period.</td></tr>}
+            {isLoading && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">Loading…</td></tr>}
+            {!isLoading && rows.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No sales found for this period.</td></tr>}
             {rows.map((r) => {
               const st = STATUS[r.status] ?? { label: r.status, v: "outline" as const };
               return (
@@ -83,12 +86,25 @@ function SalesPage() {
                   <td className="p-2 text-right">{taka(Number(r.total) - Number(r.returned_amount))}</td>
                   <td className="p-2 text-right">{Number(r.due) > 0 ? taka(r.due) : "—"}</td>
                   <td className="p-2"><Badge variant={st.v}>{st.label}</Badge></td>
+                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const c = (r.courier_orders ?? []).find((x) => x.status !== "cancelled");
+                      if (c) return (
+                        <button type="button" onClick={() => setCourierId(r.id)} className="text-left">
+                          <Badge variant={COURIER_STATUS[c.status]?.tone ?? "outline"}><Truck className="mr-1 h-3 w-3" />{COURIER_STATUS[c.status]?.label ?? c.status}</Badge>
+                        </button>
+                      );
+                      if (r.status === "cancelled" || r.status === "returned") return <span className="text-muted-foreground">—</span>;
+                      return <Button size="sm" variant="outline" className="h-7" onClick={() => setCourierId(r.id)}><Truck className="mr-1 h-3.5 w-3.5" />Courier</Button>;
+                    })()}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      {courierId && <CourierDialog saleId={courierId} onClose={() => setCourierId(null)} />}
       <SaleDetail key={openId ?? "none"} saleId={openId} isMgr={isMgr} onClose={() => setOpenId(null)} />
     </div>
   );

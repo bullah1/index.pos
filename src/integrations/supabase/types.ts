@@ -80,6 +80,77 @@ export type Database = {
         }
         Relationships: []
       }
+      courier_orders: {
+        Row: {
+          cod_amount: number
+          consignment_id: string
+          courier_invoice: string
+          created_at: string
+          created_by: string
+          delivery_charge: number
+          delivery_type: number
+          id: string
+          note: string | null
+          provider: string
+          recipient_address: string
+          recipient_name: string
+          recipient_phone: string
+          sale_id: string
+          status: string
+          status_checked_at: string | null
+          tracking_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          cod_amount?: number
+          consignment_id?: string
+          courier_invoice?: string
+          created_at?: string
+          created_by?: string
+          delivery_charge?: number
+          delivery_type?: number
+          id?: string
+          note?: string | null
+          provider?: string
+          recipient_address?: string
+          recipient_name?: string
+          recipient_phone?: string
+          sale_id?: string
+          status?: string
+          status_checked_at?: string | null
+          tracking_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cod_amount?: number
+          consignment_id?: string
+          courier_invoice?: string
+          created_at?: string
+          created_by?: string
+          delivery_charge?: number
+          delivery_type?: number
+          id?: string
+          note?: string | null
+          provider?: string
+          recipient_address?: string
+          recipient_name?: string
+          recipient_phone?: string
+          sale_id?: string
+          status?: string
+          status_checked_at?: string | null
+          tracking_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_orders_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_payments: {
         Row: {
           amount: number
@@ -976,6 +1047,8 @@ export type Database = {
         Returns: undefined
       }
       cash_drawer_close: { Args: { p: Json }; Returns: Json }
+      save_courier_order: { Args: { p: Json }; Returns: Json }
+      set_courier_status: { Args: { p_id: string; p_status: string }; Returns: undefined }
       delete_expense: { Args: { p_id: string }; Returns: undefined }
       drawer_is_open: { Args: { _user_id: string }; Returns: boolean }
       cash_drawer_open: { Args: { p: Json }; Returns: Json }
