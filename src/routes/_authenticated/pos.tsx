@@ -19,6 +19,7 @@ import {
   type Payment,
 } from "@/lib/pos";
 import { bdToday, errMsg, taka } from "@/lib/format";
+import { packSize, stockLabel } from "@/lib/pack";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -132,6 +133,27 @@ function PosPage() {
     searchRef.current?.focus();
   }
   const update = (id: string, patch: Partial<CartLine>) => setCart((c) => c.map((l) => (l.medicine_id === id ? { ...l, ...patch } : l)));
+  /** Sell one more full box: rounds the line up to the next whole box. */
+  const addBox = (l: CartLine) => {
+    const m = medById.get(l.medicine_id);
+    const pack = m ? packSize(m) : 1;
+    const next = (Math.floor(l.qty / pack) + 1) * pack;
+    if (next > l.available) toast.warning(`Only ${m ? stockLabel(l.available, m) : l.available} in stock`);
+    update(l.medicine_id, { qty: Math.min(next, l.available) });
+  };
+  const boxBtn = (l: CartLine, className: string) => {
+    const m = medById.get(l.medicine_id);
+    if (!m || packSize(m) <= 1) return null;
+    return (
+      <Button variant="secondary" size="sm" className={className} onClick={() => addBox(l)} title={`Add a full box (${packSize(m)} ${m.sale_unit})`}>
+        +Box
+      </Button>
+    );
+  };
+  const qtyHint = (l: CartLine) => {
+    const m = medById.get(l.medicine_id);
+    return m && packSize(m) > 1 && l.qty >= packSize(m) ? <div className="mt-0.5 text-[11px] text-muted-foreground">= {stockLabel(l.qty, m)}</div> : null;
+  };
   /** Highest batch cost among the batches this line will sell from. */
   const maxCost = (l: CartLine) => {
     const m = medById.get(l.medicine_id);
@@ -229,7 +251,7 @@ function PosPage() {
             ref={searchRef}
             autoFocus
             value={q}
-            placeholder="Search medicine, generic or barcode…  (F2)"
+            placeholder="Search medicine or scan barcode (F2)"
             className="h-11 pl-9 text-base"
             onChange={(e) => { setQ(e.target.value); setHi(0); }}
             onKeyDown={(e) => {
@@ -265,7 +287,7 @@ function PosPage() {
                       <span className="shrink-0 text-right text-xs">
                         <span className="block font-medium">{next ? taka(next.sale_price) : "—"}</span>
                         <span className={cn(st <= 0 ? "text-destructive" : "text-muted-foreground")}>
-                          {st > 0 ? `${st} ${m.sale_unit}` : "Out of stock"}
+                          {st > 0 ? stockLabel(st, m) : "Out of stock"}
                         </span>
                       </span>
                     </button>
@@ -277,7 +299,7 @@ function PosPage() {
           {q && results.length === 0 && !isLoading && <p className="mt-2 text-sm text-muted-foreground">No medicine matches “{q}”.</p>}
           {medsError && <p className="mt-2 text-sm text-destructive">Could not load medicines: {errMsg(medsError)}</p>}
           {!isLoading && !medsError && meds.length === 0 && (
-            <p className="mt-2 text-sm text-muted-foreground">No medicines yet. Add medicines in Inventory, then receive stock in Purchases.</p>
+            <p className="mt-2 text-sm text-muted-foreground">No medicines yet. Add medicines in Medicines &amp; Stock, then receive stock in Purchases.</p>
           )}
         </div>
 
@@ -299,7 +321,7 @@ function PosPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-medium">{l.name}</div>
-                        <div className="text-xs text-muted-foreground">{alloc.map((a) => `${a.batch.batch_no} ×${a.qty}`).join(", ")}</div>
+                        <div className="text-xs text-muted-foreground">exp {alloc.map((a) => a.batch.expiry_date.slice(0, 7)).join(", ")}</div>
                       </div>
                       <div className="shrink-0 text-right font-semibold">{taka(lineTotal(l))}</div>
                     </div>
@@ -313,10 +335,12 @@ function PosPage() {
                         onChange={(e) => update(l.medicine_id, { qty: num(e.target.value) })}
                         onBlur={() => { if (!(l.qty > 0)) update(l.medicine_id, { qty: 1 }); }} />
                       <Button size="icon" variant="outline" className="h-9 w-9" aria-label="Increase" onClick={() => update(l.medicine_id, { qty: Math.min(l.available, l.qty + 1) })}><Plus className="h-4 w-4" /></Button>
+                      {boxBtn(l, "h-9 px-2")}
                       <Input type="number" inputMode="decimal" placeholder="Disc ৳" value={l.discount || ""} className="h-9 w-20 px-2" aria-label="Discount"
                         onChange={(e) => update(l.medicine_id, { discount: num(e.target.value) })} />
                       <Button size="icon" variant="ghost" className="ml-auto h-9 w-9" aria-label="Remove" onClick={() => setCart((c) => c.filter((x) => x.medicine_id !== l.medicine_id))}><Trash2 className="h-4 w-4" /></Button>
                     </div>
+                    {qtyHint(l)}
                     {l.qty > l.available && <div className="text-xs text-destructive">Only {l.available} left</div>}
                   </li>
                 );
@@ -344,7 +368,7 @@ function PosPage() {
                         <td className="p-2">
                           <div className="font-medium">{l.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            {alloc.map((a) => `${a.batch.batch_no} (exp ${a.batch.expiry_date}) ×${a.qty}`).join(", ")}
+                            exp {alloc.map((a) => a.batch.expiry_date.slice(0, 7)).join(", ")}
                           </div>
                         </td>
                         <td className="p-2">{priceField(l, prices, "h-8 w-24 px-2")}</td>
@@ -366,7 +390,9 @@ function PosPage() {
                             <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Increase" onClick={() => update(l.medicine_id, { qty: Math.min(l.available, l.qty + 1) })}>
                               <Plus className="h-3 w-3" />
                             </Button>
+                            {boxBtn(l, "h-8 px-2")}
                           </div>
+                          {qtyHint(l)}
                           {l.qty > l.available && <div className="text-xs text-destructive">Only {l.available} left</div>}
                         </td>
                         <td className="p-2">
@@ -486,7 +512,17 @@ function PosPage() {
               Pay full amount
             </Button>
           )}
-          <p className="text-xs text-muted-foreground">For cash, type the note the customer gave (e.g. 500) — change is shown below.</p>
+          {payments.length === 1 && payments[0]?.method === "cash" && totals.payable > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              <span className="self-center text-xs text-muted-foreground">Cash given:</span>
+              {[...new Set([100, 200, 500, 1000, 2000, 5000].filter((n) => n > totals.payable).slice(0, 3))].map((n) => (
+                <Button key={n} type="button" variant="outline" size="sm" className="h-7 px-2 text-xs"
+                  onClick={() => { setAutoPay(false); setPayments([{ method: "cash", amount: String(n) }]); }}>
+                  ৳{n}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="space-y-1 text-sm">

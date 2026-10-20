@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { bdToday, daysUntil, taka } from "@/lib/format";
 import { dailyReport, type RItem, type RSale } from "@/lib/report";
 import { fetchAll, medicinesQuery, settingsQuery } from "@/lib/queries";
+import { isLowStock } from "@/lib/pack";
 import { sellableStock } from "@/lib/pos";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -74,7 +75,7 @@ function Dashboard() {
     let low = 0, expiring = 0, expired = 0;
     for (const m of meds) {
       if (!m.is_active) continue;
-      if (sellableStock(m.batches, today) <= settings.low_stock_threshold) low++;
+      if (isLowStock(sellableStock(m.batches, today), m, settings.low_stock_threshold)) low++;
       for (const b of m.batches) {
         if (Number(b.qty_on_hand) <= 0) continue;
         const d = daysUntil(b.expiry_date, today);
@@ -97,7 +98,7 @@ function Dashboard() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat icon={TrendingUp} label="Today's sales" value={taka(todayRow?.sales)} sub={`${todayRow?.invoices ?? 0} invoices`} />
         <Stat icon={Wallet} label="Today's gross profit" value={taka(todayRow?.profit)} sub={`Due today ${taka(todayRow?.due)}`} />
-        <Stat icon={AlertTriangle} label="Low stock medicines" value={String(alerts.low)} sub={`At or below ${settings.low_stock_threshold}`} />
+        <Stat icon={AlertTriangle} label="Low stock medicines" value={String(alerts.low)} sub={`${settings.low_stock_threshold} box/bottle or less`} />
         <Stat icon={CalendarClock} label="Expiring batches" value={String(alerts.expiring)} sub={`${alerts.expired} already expired`} />
       </div>
 

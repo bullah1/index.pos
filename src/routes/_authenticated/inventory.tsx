@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { medicinesQuery, settingsQuery, type Batch, type Medicine, type MedicineWithBatches } from "@/lib/queries";
 import { sellableStock } from "@/lib/pos";
+import { isLowStock, stockLabel } from "@/lib/pack";
 import { bdToday, daysUntil, errMsg, taka } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,7 @@ function InventoryPage() {
     if (s && ![m.name, m.name_bn, m.generic_name, m.barcode, m.code, m.manufacturer].some((f) => f?.toLowerCase().includes(s))) return false;
     if (filter === "inactive") return !m.is_active;
     if (!m.is_active) return false;
-    if (filter === "low") return stock <= low;
+    if (filter === "low") return isLowStock(stock, m, low);
     if (filter === "expiring") return expiring;
     if (filter === "expired") return expired;
     return true;
@@ -71,7 +72,7 @@ function InventoryPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Medicines / Inventory</h1>
+          <h1 className="text-xl font-semibold">Medicines &amp; Stock</h1>
           <p className="text-sm text-muted-foreground">Sellable stock value (at cost): <span className="font-medium text-foreground">{taka(totalValue)}</span></p>
         </div>
         <div className="flex gap-2">
@@ -85,7 +86,7 @@ function InventoryPage() {
           <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All active</SelectItem>
-            <SelectItem value="low">Low stock (≤ {low})</SelectItem>
+            <SelectItem value="low">Low stock</SelectItem>
             <SelectItem value="expiring">Expiring in {alertDays}d</SelectItem>
             <SelectItem value="expired">Has expired stock</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
@@ -96,23 +97,22 @@ function InventoryPage() {
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
-            <tr><th className="w-8" /><th className="p-2">Medicine</th><th className="p-2">Generic</th><th className="p-2">Stock</th><th className="p-2">Value</th><th className="p-2">Alerts</th><th /></tr>
+            <tr><th className="w-8" /><th className="p-2">Medicine</th><th className="p-2">Stock</th><th className="p-2">Value</th><th className="p-2">Alerts</th><th /></tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">Loading…</td></tr>}
-            {error && <tr><td colSpan={7} className="p-6 text-center text-destructive">{errMsg(error)}</td></tr>}
-            {!isLoading && shown.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No medicines found.{isMgr && meds.length === 0 && " Add your first medicine, then receive stock from Purchases."}</td></tr>}
+            {isLoading && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">Loading…</td></tr>}
+            {error && <tr><td colSpan={6} className="p-6 text-center text-destructive">{errMsg(error)}</td></tr>}
+            {!isLoading && shown.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No medicines found.{isMgr && meds.length === 0 && " Add your first medicine, then receive stock from Purchases."}</td></tr>}
             {shown.slice(0, limit).map(({ m, stock, value, expired, expiring }) => (
               <Fragment key={m.id}>
                 <tr className="border-b">
                   <td className="p-2"><button aria-label="Show batches" onClick={() => setOpen(open === m.id ? null : m.id)}>{open === m.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</button></td>
-                  <td className="p-2"><div className="font-medium">{m.name} {m.strength}</div><div className="text-xs text-muted-foreground">{[m.name_bn, m.dosage_form, m.manufacturer, m.code].filter(Boolean).join(" · ")}</div></td>
-                  <td className="p-2">{m.generic_name}</td>
-                  <td className="p-2">{stock} {m.sale_unit}</td>
+                  <td className="p-2"><div className="font-medium">{m.name} {m.strength}</div><div className="text-xs text-muted-foreground">{[m.name_bn, m.generic_name, m.dosage_form, m.manufacturer, m.code].filter(Boolean).join(" · ")}</div></td>
+                  <td className="whitespace-nowrap p-2 font-medium">{stockLabel(stock, m)}</td>
                   <td className="p-2">{taka(value)}</td>
                   <td className="p-2 space-x-1">
                     {stock <= 0 ? <Badge variant="destructive">Out of stock</Badge>
-                      : stock <= low && <Badge variant="outline" className="border-warning text-warning-foreground">Low</Badge>}
+                      : isLowStock(stock, m, low) && <Badge variant="outline" className="border-warning text-warning-foreground">Low</Badge>}
                     {expiring && <Badge variant="outline" className="border-warning text-warning-foreground">Expiring</Badge>}
                     {expired && <Badge variant="destructive">Expired</Badge>}
                     {m.prescription_required && <Badge variant="secondary">Rx</Badge>}
@@ -120,7 +120,7 @@ function InventoryPage() {
                   <td className="p-2 text-right">{isMgr && <Button variant="ghost" size="sm" onClick={() => setEditing(m)}>Edit</Button>}</td>
                 </tr>
                 {open === m.id && (
-                  <tr className="border-b bg-muted/30"><td /><td colSpan={6} className="p-2">
+                  <tr className="border-b bg-muted/30"><td /><td colSpan={5} className="p-2">
                     {isMgr && (
                       <div className="mb-2 flex justify-end">
                         <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAdding(m)}><Plus className="mr-1 h-3 w-3" />Add stock (opening)</Button>

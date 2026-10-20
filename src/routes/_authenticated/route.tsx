@@ -1,7 +1,8 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import { BarChart3, Boxes, ClipboardList, Building2, Coins, History, LayoutDashboard, Receipt as ReceiptIcon, Settings, Sparkles, Users, LogOut, Menu, Pill, ShoppingCart, Truck, Wallet } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { settingsQuery } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -30,22 +31,38 @@ export const Route = createFileRoute("/_authenticated")({
   component: Layout,
 });
 
-const NAV = [
-  { to: "/pos", label: "POS Counter", icon: ShoppingCart, mgr: false, admin: false },
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, mgr: false, admin: false },
-  { to: "/sales", label: "Sales History", icon: History, mgr: false, admin: false },
-  { to: "/cash-drawer", label: "Cash Drawer", icon: Wallet, mgr: false, admin: false },
-  { to: "/inventory", label: "Medicines / Inventory", icon: Boxes, mgr: false, admin: false },
-  { to: "/stock-adjustments", label: "Stock Adjustments", icon: ClipboardList, mgr: true, admin: false },
-  { to: "/customers", label: "Customers & Due", icon: Users, mgr: false, admin: false },
-  { to: "/purchases", label: "Purchases", icon: Truck, mgr: true, admin: false },
-  { to: "/suppliers", label: "Suppliers", icon: Building2, mgr: true, admin: false },
-  { to: "/supplier-payments", label: "Supplier Payments", icon: Coins, mgr: true, admin: false },
-  { to: "/expenses", label: "Expenses", icon: ReceiptIcon, mgr: true, admin: false },
-  { to: "/reports", label: "Reports", icon: BarChart3, mgr: false, admin: false },
-  { to: "/assistant", label: "Ask AI", icon: Sparkles, mgr: true, admin: false },
-  { to: "/settings", label: "Settings & Staff", icon: Settings, mgr: true, admin: true },
-] as const;
+type NavItem = { to: string; label: string; icon: typeof ShoppingCart; mgr?: boolean; admin?: boolean };
+const NAV: { title: string; items: NavItem[] }[] = [
+  {
+    title: "Sell",
+    items: [
+      { to: "/pos", label: "POS Counter", icon: ShoppingCart },
+      { to: "/sales", label: "Sales & Returns", icon: History },
+      { to: "/customers", label: "Customers & Due", icon: Users },
+      { to: "/cash-drawer", label: "Cash Drawer", icon: Wallet },
+    ],
+  },
+  {
+    title: "Stock",
+    items: [
+      { to: "/inventory", label: "Medicines & Stock", icon: Boxes },
+      { to: "/purchases", label: "Purchases", icon: Truck, mgr: true },
+      { to: "/stock-adjustments", label: "Stock Adjustments", icon: ClipboardList, mgr: true },
+      { to: "/suppliers", label: "Suppliers", icon: Building2, mgr: true },
+      { to: "/supplier-payments", label: "Supplier Payments", icon: Coins, mgr: true },
+    ],
+  },
+  {
+    title: "Accounts",
+    items: [
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/reports", label: "Reports", icon: BarChart3 },
+      { to: "/expenses", label: "Expenses", icon: ReceiptIcon, mgr: true },
+      { to: "/assistant", label: "Ask AI", icon: Sparkles, mgr: true },
+      { to: "/settings", label: "Settings & Staff", icon: Settings, mgr: true, admin: true },
+    ],
+  },
+];
 
 function Layout() {
   const { user, role } = Route.useRouteContext();
@@ -54,6 +71,8 @@ function Layout() {
   const nav = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const isMgr = role === "admin" || role === "manager";
+  const { data: settings } = useQuery({ ...settingsQuery, enabled: !!role });
+  const shopName = settings?.pharmacy_name && settings.pharmacy_name !== "My Pharmacy" ? settings.pharmacy_name : "Pharmacy POS";
 
   async function signOut() {
     await qc.cancelQueries();
@@ -76,14 +95,25 @@ function Layout() {
   }
 
   const links = (
-    <nav className="space-y-1">
-      {NAV.filter((n) => (!n.mgr || isMgr) && (!n.admin || role === "admin")).map((n) => (
-        <Link key={n.to} to={n.to} onClick={() => setOpen(false)}
-          className={cn("flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-            path.startsWith(n.to) ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60")}>
-          <n.icon className="h-4 w-4 shrink-0" />{n.label}
-        </Link>
-      ))}
+    <nav className="space-y-4">
+      {NAV.map((g) => {
+        const items = g.items.filter((n) => (!n.mgr || isMgr) && (!n.admin || role === "admin"));
+        if (items.length === 0) return null;
+        return (
+          <div key={g.title}>
+            <div className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{g.title}</div>
+            <div className="space-y-0.5">
+              {items.map((n) => (
+                <Link key={n.to} to={n.to} onClick={() => setOpen(false)}
+                  className={cn("flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+                    path.startsWith(n.to) ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60")}>
+                  <n.icon className="h-4 w-4 shrink-0" />{n.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </nav>
   );
   const footer = (
@@ -94,9 +124,9 @@ function Layout() {
     </div>
   );
   const brand = (
-    <div className="mb-6 flex items-center gap-2 px-1 font-semibold">
-      <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground"><Pill className="h-4 w-4" /></span>
-      Pharmacy POS
+    <div className="mb-5 flex items-center gap-2 px-1 font-semibold">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground"><Pill className="h-4 w-4" /></span>
+      <span className="truncate">{shopName}</span>
     </div>
   );
 
@@ -114,7 +144,7 @@ function Layout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b px-3 py-2 md:hidden print:hidden">
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></Button>
-          <span className="font-semibold">Pharmacy POS</span>
+          <span className="truncate font-semibold">{shopName}</span>
         </header>
         {path !== "/pos" && <DrawerBanner userId={user.id} />}
         <main className="flex-1 p-3 md:p-6"><Outlet /></main>
