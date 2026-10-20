@@ -39,3 +39,7 @@ export function autoBatchNo(d = new Date()) {
   const ymd = bdToday(d).slice(2).replace(/-/g, "").replace(/(\d{2})(\d{2})(\d{2})/, "$3$2$1");
   return `B${ymd}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
+
+/** Purchase price used when a medicine has no earlier batch: MRP − 55%. */
+export const COST_RATE = 0.45;
+export const defaultCost = (mrp: number | string | null | undefined) => Math.round(Number(mrp ?? 0) * COST_RATE * 100) / 100;

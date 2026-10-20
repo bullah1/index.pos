@@ -5,7 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { medicinesQuery, suppliersQuery } from "@/lib/queries";
-import { bdDateTime, bdToday, errMsg, taka, NO_EXPIRY, autoBatchNo } from "@/lib/format";
+import { bdDateTime, bdToday, errMsg, taka, NO_EXPIRY, autoBatchNo, defaultCost } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -154,7 +154,7 @@ function PurchaseDialog({ onClose }: { onClose: () => void }) {
                   onChange={(v) => {
                     const m = meds.find((x) => x.id === v);
                     const last = [...(m?.batches ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1);
-                    upd(i, { medicine_id: v, sale_price: Number(last?.sale_price ?? m?.default_price ?? 0), unit_cost: Number(last?.unit_cost ?? 0) });
+                    upd(i, { medicine_id: v, sale_price: Number(last?.sale_price ?? m?.default_price ?? 0), unit_cost: last ? Number(last.unit_cost) : defaultCost(m?.default_price) });
                   }}
                 />
               </div>

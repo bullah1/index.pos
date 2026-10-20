@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Batch, Medicine } from "@/lib/queries";
-import { bdToday, errMsg, taka, NO_EXPIRY, autoBatchNo, expLabel } from "@/lib/format";
+import { bdToday, errMsg, taka, NO_EXPIRY, autoBatchNo, expLabel, defaultCost } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -118,7 +118,7 @@ export function NewBatchDialog({ medicine, onClose }: { medicine: Medicine & { b
     batch_no: "",
     expiry_date: "",
     qty: "",
-    unit_cost: last ? String(last.unit_cost) : "",
+    unit_cost: last ? String(last.unit_cost) : medicine.default_price ? String(defaultCost(medicine.default_price)) : "",
     sale_price: String(last?.sale_price ?? medicine.default_price ?? ""),
     reason: "opening" as AdjReason,
     note: "",
