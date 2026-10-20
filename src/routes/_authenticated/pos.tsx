@@ -18,7 +18,7 @@ import {
   type PayMethod,
   type Payment,
 } from "@/lib/pos";
-import { bdToday, errMsg, taka } from "@/lib/format";
+import { bdToday, errMsg, taka, expLabel } from "@/lib/format";
 import { packSize, stockLabel } from "@/lib/pack";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -321,7 +321,7 @@ function PosPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-medium">{l.name}</div>
-                        <div className="text-xs text-muted-foreground">exp {alloc.map((a) => a.batch.expiry_date.slice(0, 7)).join(", ")}</div>
+                        <div className="text-xs text-muted-foreground">exp {alloc.map((a) => expLabel(a.batch.expiry_date)).join(", ")}</div>
                       </div>
                       <div className="shrink-0 text-right font-semibold">{taka(lineTotal(l))}</div>
                     </div>
@@ -368,7 +368,7 @@ function PosPage() {
                         <td className="p-2">
                           <div className="font-medium">{l.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            exp {alloc.map((a) => a.batch.expiry_date.slice(0, 7)).join(", ")}
+                            exp {alloc.map((a) => expLabel(a.batch.expiry_date)).join(", ")}
                           </div>
                         </td>
                         <td className="p-2">{priceField(l, prices, "h-8 w-24 px-2")}</td>

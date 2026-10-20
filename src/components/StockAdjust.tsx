@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Batch, Medicine } from "@/lib/queries";
-import { bdToday, errMsg, taka } from "@/lib/format";
+import { bdToday, errMsg, taka, NO_EXPIRY, autoBatchNo, expLabel } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,7 +64,7 @@ export function AdjustBatchDialog({ medicine, batch, onClose }: { medicine: Medi
         <DialogHeader><DialogTitle>Adjust stock</DialogTitle></DialogHeader>
         <div className="rounded-md bg-muted p-3 text-sm">
           <div className="font-medium">{medicine.name} {medicine.strength}</div>
-          <div className="text-muted-foreground">Batch {batch.batch_no} · exp {batch.expiry_date} · cost {taka(batch.unit_cost)}</div>
+          <div className="text-muted-foreground">Batch {batch.batch_no} · exp {expLabel(batch.expiry_date)} · cost {taka(batch.unit_cost)}</div>
           <div className="mt-1">In system now: <b>{now} {medicine.sale_unit}</b></div>
         </div>
         <form
@@ -129,12 +129,13 @@ export function NewBatchDialog({ medicine, onClose }: { medicine: Medicine & { b
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!f.batch_no.trim() || !f.expiry_date) { toast.error("Batch number and expiry are required"); return; }
-    if (f.expiry_date <= bdToday()) { toast.error("This batch is already expired"); return; }
+    const batchNo = f.batch_no.trim() || autoBatchNo();
+    const expiry = f.expiry_date || NO_EXPIRY;
+    if (expiry <= bdToday()) { toast.error("This batch is already expired"); return; }
     if (!(Number(f.qty) > 0)) { toast.error("Enter a quantity"); return; }
     if (f.unit_cost === "" || !(Number(f.sale_price) > 0)) { toast.error("Enter cost and sale price"); return; }
     adjust.mutate({
-      idempotency_key: key, medicine_id: medicine.id, batch_no: f.batch_no.trim(), expiry_date: f.expiry_date,
+      idempotency_key: key, medicine_id: medicine.id, batch_no: batchNo, expiry_date: expiry,
       qty: Number(f.qty), unit_cost: Number(f.unit_cost), sale_price: Number(f.sale_price), reason: f.reason, note: f.note,
     });
   }
@@ -145,9 +146,9 @@ export function NewBatchDialog({ medicine, onClose }: { medicine: Medicine & { b
         <DialogHeader><DialogTitle>Add stock — {medicine.name} {medicine.strength}</DialogTitle></DialogHeader>
         <p className="text-sm text-muted-foreground">For stock you already have (opening stock, found stock). New stock bought from a supplier goes in Purchases, so the supplier balance stays right.</p>
         <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
-          <div><Label htmlFor="nb-b">Batch no.</Label><Input id="nb-b" value={f.batch_no} onChange={set("batch_no")} autoFocus /></div>
-          <div><Label htmlFor="nb-e">Expiry</Label><Input id="nb-e" type="date" value={f.expiry_date} onChange={set("expiry_date")} /></div>
-          <div><Label htmlFor="nb-q">Quantity ({medicine.sale_unit})</Label><Input id="nb-q" type="number" inputMode="decimal" min={0} step="any" value={f.qty} onChange={set("qty")} /></div>
+          <div><Label htmlFor="nb-b">Batch no. <span className="font-normal text-muted-foreground">(optional)</span></Label><Input id="nb-b" value={f.batch_no} onChange={set("batch_no")} placeholder="Auto" /></div>
+          <div><Label htmlFor="nb-e">Expiry <span className="font-normal text-muted-foreground">(optional)</span></Label><Input id="nb-e" type="date" value={f.expiry_date} onChange={set("expiry_date")} /></div>
+          <div><Label htmlFor="nb-q">Quantity ({medicine.sale_unit})</Label><Input id="nb-q" autoFocus type="number" inputMode="decimal" min={0} step="any" value={f.qty} onChange={set("qty")} /></div>
           <div><Label htmlFor="nb-c">Cost / unit (৳)</Label><Input id="nb-c" type="number" inputMode="decimal" min={0} step="0.01" value={f.unit_cost} onChange={set("unit_cost")} /></div>
           <div><Label htmlFor="nb-s">Sale price (৳)</Label><Input id="nb-s" type="number" inputMode="decimal" min={0} step="0.01" value={f.sale_price} onChange={set("sale_price")} /></div>
           <div>

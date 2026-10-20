@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { bdDateTime, bdToday, errMsg, taka } from "@/lib/format";
+import { bdDateTime, bdToday, errMsg, taka, expLabel } from "@/lib/format";
 import { PAY_METHODS, returnValue, splitRefund, type PayMethod } from "@/lib/pos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -206,7 +206,7 @@ function SaleDetail({ saleId, isMgr, onClose }: { saleId: string | null; isMgr: 
                       const left = Number(i.qty) - Number(i.returned_qty);
                       return (
                         <tr key={i.id} className="border-b last:border-0">
-                          <td className="p-2"><div className="font-medium">{i.medicine_name}</div><div className="text-xs text-muted-foreground">{i.batch_no} · exp {i.expiry_date}</div></td>
+                          <td className="p-2"><div className="font-medium">{i.medicine_name}</div><div className="text-xs text-muted-foreground">{i.batch_no} · exp {expLabel(i.expiry_date)}</div></td>
                           <td className="p-2">{i.qty}{Number(i.returned_qty) > 0 && <div className="text-xs text-muted-foreground">{i.returned_qty} returned</div>}</td>
                           <td className="p-2">{taka(i.unit_price)}{Number(i.discount) > 0 && <div className="text-xs text-muted-foreground">−{taka(i.discount)}</div>}</td>
                           <td className="p-2 text-right">{taka(i.line_total)}</td>

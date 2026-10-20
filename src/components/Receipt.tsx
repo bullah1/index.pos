@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { settingsQuery } from "@/lib/queries";
-import { bdDateTime, taka } from "@/lib/format";
+import { bdDateTime, taka, expLabel } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -62,7 +62,7 @@ export function ReceiptDialog({
                 <tbody>
                   {data.items.map((it) => (
                     <tr key={it.id} className="align-top">
-                      <td>{it.medicine_name}{fmt === "a4" && <span className="opacity-70"> · {it.batch_no} · exp {it.expiry_date}</span>}
+                      <td>{it.medicine_name}{fmt === "a4" && <span className="opacity-70"> · {it.batch_no} · exp {expLabel(it.expiry_date)}</span>}
                         <div className="opacity-70">@ {taka(it.unit_price)}{Number(it.discount) > 0 && ` − ${taka(it.discount)}`}</div></td>
                       <td className="text-right">{Number(it.qty)}</td>
                       <td className="text-right">{taka(it.line_total)}</td>

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAll } from "@/lib/queries";
-import { bdDateTime, bdToday, errMsg, taka } from "@/lib/format";
+import { bdDateTime, bdToday, errMsg, taka, expLabel } from "@/lib/format";
 import { toCsv } from "@/lib/report";
 import { ADJ_REASONS, reasonLabel } from "@/components/StockAdjust";
 import { Button } from "@/components/ui/button";
@@ -122,7 +122,7 @@ function StockAdjustments() {
                 <TableCell><div className="font-medium">{r.adj_no}</div><div className="text-xs text-muted-foreground">{bdDateTime(r.created_at)}</div></TableCell>
                 <TableCell>
                   <div className="font-medium">{r.medicines?.name} {r.medicines?.strength}</div>
-                  <div className="text-xs text-muted-foreground">{r.medicine_batches?.batch_no} · exp {r.medicine_batches?.expiry_date}</div>
+                  <div className="text-xs text-muted-foreground">{r.medicine_batches?.batch_no} · exp {expLabel(r.medicine_batches?.expiry_date)}</div>
                 </TableCell>
                 <TableCell>{reasonLabel(r.reason)}{r.note && <div className="text-xs text-muted-foreground">{r.note}</div>}</TableCell>
                 <TableCell className="text-right">{Number(r.qty_before)}</TableCell>

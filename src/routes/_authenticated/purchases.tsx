@@ -5,7 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { medicinesQuery, suppliersQuery } from "@/lib/queries";
-import { bdDateTime, bdToday, errMsg, taka } from "@/lib/format";
+import { bdDateTime, bdToday, errMsg, taka, NO_EXPIRY, autoBatchNo } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,17 +102,19 @@ function PurchaseDialog({ onClose }: { onClose: () => void }) {
   async function post() {
     if (busy) return;
     if (!supplierId) { toast.error("Select a supplier"); return; }
-    for (const l of lines) {
-      if (!l.medicine_id || !l.batch_no.trim() || !l.expiry_date) { toast.error("Each line needs medicine, batch number and expiry"); return; }
-      if (l.expiry_date <= bdToday()) { toast.error(`Batch ${l.batch_no} is already expired`); return; }
-      if (!(l.sale_price > 0)) { toast.error(`Set a sale price for batch ${l.batch_no}`); return; }
+    const items = lines.map((l) => ({ ...l, batch_no: l.batch_no.trim() || autoBatchNo(), expiry_date: l.expiry_date || NO_EXPIRY }));
+    for (const l of items) {
+      const name = meds.find((m) => m.id === l.medicine_id)?.name ?? "this line";
+      if (!l.medicine_id) { toast.error("Select a medicine on each line"); return; }
+      if (l.expiry_date <= bdToday()) { toast.error(`${name}: expiry date has already passed`); return; }
+      if (!(l.sale_price > 0)) { toast.error(`${name}: set a sale price`); return; }
       if (!(l.qty > 0)) { toast.error("Quantity must be positive"); return; }
     }
     if (discount > sub) { toast.error("Discount exceeds subtotal"); return; }
     if (paid > total) { toast.error("Paid exceeds total"); return; }
     setBusy(true);
     const { data, error } = await supabase.rpc("post_purchase", {
-      p: { idempotency_key: key, supplier_id: supplierId, supplier_invoice_no: invNo, purchase_date: date, discount, paid, items: lines } as never,
+      p: { idempotency_key: key, supplier_id: supplierId, supplier_invoice_no: invNo, purchase_date: date, discount, paid, items } as never,
     });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
@@ -139,7 +141,7 @@ function PurchaseDialog({ onClose }: { onClose: () => void }) {
 
         <div className="space-y-2">
           <div className="hidden grid-cols-[2fr_1fr_1fr_80px_1fr_1fr_32px] gap-2 text-xs text-muted-foreground md:grid">
-            <span>Medicine</span><span>Batch no.</span><span>Expiry</span><span>Qty</span><span>Cost / unit</span><span>Sell price</span><span />
+            <span>Medicine</span><span>Batch (optional)</span><span>Expiry (optional)</span><span>Qty</span><span>Cost / unit</span><span>Sell price</span><span />
           </div>
           {lines.map((l, i) => (
             <div key={i} className="grid grid-cols-2 gap-2 rounded-md border p-2 md:grid-cols-[2fr_1fr_1fr_80px_1fr_1fr_32px] md:border-0 md:p-0">
@@ -156,8 +158,8 @@ function PurchaseDialog({ onClose }: { onClose: () => void }) {
                   }}
                 />
               </div>
-              <Input placeholder="Batch" value={l.batch_no} onChange={(e) => upd(i, { batch_no: e.target.value })} />
-              <Input type="date" value={l.expiry_date} onChange={(e) => upd(i, { expiry_date: e.target.value })} />
+              <Input placeholder="Batch (auto)" value={l.batch_no} onChange={(e) => upd(i, { batch_no: e.target.value })} />
+              <Input type="date" value={l.expiry_date} title="Expiry (optional)" aria-label="Expiry (optional)" onChange={(e) => upd(i, { expiry_date: e.target.value })} />
               <Input type="number" min={1} value={l.qty || ""} placeholder="Qty" onChange={(e) => upd(i, { qty: Math.max(0, Number(e.target.value) || 0) })} aria-label="Quantity" />
               <Input type="number" min={0} step="0.01" value={l.unit_cost} onChange={(e) => upd(i, { unit_cost: Number(e.target.value) })} aria-label="Cost" />
               <Input type="number" min={0} step="0.01" value={l.sale_price} onChange={(e) => upd(i, { sale_price: Number(e.target.value) })} aria-label="Sale price" />

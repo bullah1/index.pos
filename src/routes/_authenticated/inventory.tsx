@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { medicinesQuery, settingsQuery, type Batch, type Medicine, type MedicineWithBatches } from "@/lib/queries";
 import { sellableStock } from "@/lib/pos";
 import { isLowStock, stockLabel } from "@/lib/pack";
-import { bdToday, daysUntil, errMsg, taka } from "@/lib/format";
+import { bdToday, daysUntil, errMsg, taka, expLabel } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -135,7 +135,7 @@ function InventoryPage() {
                           return (
                             <tr key={b.id}>
                               <td className="py-1">{b.batch_no}{b.id === nextId && <Badge variant="secondary" className="ml-1">sells next</Badge>}</td>
-                              <td>{b.expiry_date}</td><td>{Number(b.qty_on_hand)}</td><td>{taka(b.unit_cost)}</td><td>{taka(b.sale_price)}</td>
+                              <td>{expLabel(b.expiry_date)}</td><td>{Number(b.qty_on_hand)}</td><td>{taka(b.unit_cost)}</td><td>{taka(b.sale_price)}</td>
                               <td>{d <= 0 ? <Badge variant="destructive">Expired</Badge> : d <= alertDays ? <span className="text-warning-foreground">{d} days left</span> : null}</td>
                               <td className="text-right">{isMgr && <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAdjusting({ m, b })}>Adjust</Button>}</td>
                             </tr>
