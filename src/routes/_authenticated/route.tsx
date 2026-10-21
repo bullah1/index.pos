@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
-import { BarChart3, Boxes, ClipboardList, Building2, Coins, History, LayoutDashboard, Receipt as ReceiptIcon, Settings, Sparkles, Users, LogOut, Menu, Pill, ShoppingCart, Truck, Wallet } from "lucide-react";
+import { BarChart3, ListChecks, Boxes, ClipboardList, Building2, Coins, History, LayoutDashboard, Receipt as ReceiptIcon, Settings, Sparkles, Users, LogOut, Menu, Pill, ShoppingCart, Truck, Wallet } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { settingsQuery } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
@@ -46,6 +46,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
     title: "Stock",
     items: [
       { to: "/inventory", label: "Medicines & Stock", icon: Boxes },
+      { to: "/stock-count", label: "Stock Entry", icon: ListChecks, mgr: true },
       { to: "/purchases", label: "Purchases", icon: Truck, mgr: true },
       { to: "/stock-adjustments", label: "Stock Adjustments", icon: ClipboardList, mgr: true },
       { to: "/suppliers", label: "Suppliers", icon: Building2, mgr: true },

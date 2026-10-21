@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLowStock, packSize, stockLabel } from "@/lib/pack";
+import { isLowStock, packSize, parseCount, stockLabel } from "@/lib/pack";
 
 describe("pack helpers", () => {
   it("reads the box size from strength", () => {
@@ -25,5 +25,16 @@ describe("pack helpers", () => {
     expect(isLowStock(90, cap, 3)).toBe(true);
     expect(isLowStock(6, { strength: "450 ml" }, 3)).toBe(false);
     expect(isLowStock(2, { strength: "450 ml" }, 3)).toBe(true);
+  });
+
+  it("parses typed counts, including box+pieces", () => {
+    expect(parseCount("126", 30)).toBe(126);
+    expect(parseCount("4+6", 30)).toBe(126);
+    expect(parseCount(" 2 + 0 ", 30)).toBe(60);
+    expect(parseCount("0", 30)).toBe(0);
+    expect(parseCount("", 30)).toBeNull();
+    expect(parseCount("abc", 30)).toBeNull();
+    expect(parseCount("1+2+3", 30)).toBeNull();
+    expect(parseCount("-5", 1)).toBeNull();
   });
 });

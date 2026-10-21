@@ -29,3 +29,13 @@ export function stockLabel(qty: number, m: PackInfo): string {
 export function isLowStock(qty: number, m: PackInfo, threshold: number): boolean {
   return qty / packSize(m) <= threshold;
 }
+
+/** "126" → 126 pieces; for box items "4+6" → 4 boxes + 6 pieces. Returns null when not a valid number. */
+export function parseCount(text: string, pack: number): number | null {
+  const s = text.trim();
+  if (s === "") return null;
+  const parts = s.split("+").map((x) => x.trim());
+  if (parts.length > 2 || parts.some((x) => !/^\d+(\.\d+)?$/.test(x))) return null;
+  if (parts.length === 2) return Number(parts[0]) * pack + Number(parts[1]);
+  return Number(parts[0]);
+}
