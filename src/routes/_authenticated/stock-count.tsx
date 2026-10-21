@@ -62,7 +62,19 @@ function StockCountPage() {
   const today = bdToday();
   const [q, setQ] = useState("");
   const [company, setCompany] = useState(ALL);
+  // Plain items: one number. Box items: boxes and loose pieces in separate boxes.
   const [counts, setCounts] = useState<Record<string, string>>({});
+  const [boxes, setBoxes] = useState<Record<string, string>>({});
+  const [loose, setLoose] = useState<Record<string, string>>({});
+  const looseRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  /** Text understood by parseCount: "12" or "4+6"; undefined when nothing typed. */
+  const countText = (m: MedicineWithBatches): string | undefined => {
+    if (packSize(m) <= 1) return counts[m.id];
+    const b = boxes[m.id]?.trim() ?? "", l = loose[m.id]?.trim() ?? "";
+    if (b === "" && l === "") return undefined;
+    return `${b || 0}+${l || 0}`;
+  };
+  const clearAll = () => { setCounts({}); setBoxes({}); setLoose({}); setPrices({}); };
   const [prices, setPrices] = useState<Record<string, Prices>>({});
   const setPrice = (id: string, k: keyof Prices, v: string) => setPrices((p) => ({ ...p, [id]: { ...p[id], [k]: v } }));
   const [mode, setMode] = useState<Mode>("purchase");
@@ -81,7 +93,7 @@ function StockCountPage() {
   const changes: Change[] = useMemo(() => {
     const out: Change[] = [];
     for (const m of active) {
-      const text = counts[m.id];
+      const text = countText(m);
       if (text == null) continue;
       const target = parseCount(text, packSize(m));
       if (target == null) continue;
@@ -92,16 +104,17 @@ function StockCountPage() {
       out.push({ m, current, target, diff, cost, price });
     }
     return out;
-  }, [active, counts, prices, today]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, counts, boxes, loose, prices, today]);
 
   const plus = changes.filter((c) => c.diff > 0);
   const minus = changes.filter((c) => c.diff < 0);
   const plusValue = plus.reduce((s, c) => s + c.diff * c.cost, 0);
   const minusValue = minus.reduce((s, c) => s - c.diff * c.cost, 0);
   const noPrice = plus.filter((c) => !(c.price > 0) || !(c.cost >= 0));
-  const invalid = Object.entries(counts).filter(([id, t]) => {
-    const m = active.find((x) => x.id === id);
-    return m && t.trim() !== "" && parseCount(t, packSize(m)) == null;
+  const invalid = active.filter((m) => {
+    const t = countText(m);
+    return t != null && t.trim() !== "" && parseCount(t, packSize(m)) == null;
   });
 
   function focusNext(id: string) {
@@ -192,8 +205,7 @@ function StockCountPage() {
         if (Number(c.m.default_price) !== c.price) await supabase.from("medicines").update({ default_price: c.price }).eq("id", c.m.id);
       }
       toast.success(`Stock saved for ${changes.length} medicine${changes.length > 1 ? "s" : ""}${done.length ? ` (${done.join(", ")})` : ""}`);
-      setCounts({});
-      setPrices({});
+      clearAll();
     } catch (e) {
       toast.error(`${errMsg(e)}${done.length ? ` — already saved: ${done.join(", ")}` : ""}`);
     } finally {
@@ -210,7 +222,7 @@ function StockCountPage() {
       <div>
         <h1 className="text-xl font-semibold">Stock Entry</h1>
         <p className="text-sm text-muted-foreground">
-          Type how many you have now. What you type becomes the stock. For boxes you can type <span className="font-medium text-foreground">4+6</span> = 4 box + 6 pieces. Leave blank to keep as is. MRP and purchase price are filled in for you (purchase = MRP − 55%); type over them only if they are different.
+          Type how many you have now. What you type becomes the stock. For capsules and tablets, type full boxes and loose pieces in their own boxes. Leave blank to keep as is. MRP and purchase price are filled in for you (purchase = MRP − 55%); type over them only if they are different.
         </p>
       </div>
 
@@ -233,7 +245,7 @@ function StockCountPage() {
           <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
               <th className="p-2">Medicine</th>
-              <th className="p-2">Now</th>
+              <th className="hidden p-2 sm:table-cell">Now</th>
               <th className="p-2">New stock</th>
               <th className="hidden p-2 sm:table-cell">MRP</th>
               <th className="hidden p-2 sm:table-cell">Purchase <span className="font-normal">(MRP −55%)</span></th>
@@ -249,7 +261,7 @@ function StockCountPage() {
             {shown.map((m) => {
               const pack = packSize(m);
               const current = sellableStock(m.batches, today);
-              const text = counts[m.id] ?? "";
+              const text = countText(m) ?? "";
               const target = parseCount(text, pack);
               const bad = text.trim() !== "" && target == null;
               const diff = target == null ? 0 : Math.round((target - current) * 1000) / 1000;
@@ -268,19 +280,49 @@ function StockCountPage() {
                   <td className="p-2">
                     <div className="font-medium">{m.name} {m.strength}</div>
                     <div className="text-xs text-muted-foreground">{m.manufacturer}</div>
+                    <div className="mt-0.5 text-xs sm:hidden">Now: <span className="font-medium">{stockLabel(current, m)}</span></div>
                   </td>
-                  <td className="whitespace-nowrap p-2 text-muted-foreground">{stockLabel(current, m)}</td>
+                  <td className="hidden whitespace-nowrap p-2 text-muted-foreground sm:table-cell">{stockLabel(current, m)}</td>
                   <td className="p-2">
-                    <Input
-                      ref={(el) => { if (el) inputs.current.set(m.id, el); else inputs.current.delete(m.id); }}
-                      inputMode={pack > 1 ? "text" : "decimal"}
-                      placeholder={pack > 1 ? "box+pcs" : ""}
-                      value={text}
-                      aria-label={`New stock for ${m.name}`}
-                      className={cn("h-9 w-20 sm:w-28", bad && "border-destructive")}
-                      onChange={(e) => setCounts((c) => ({ ...c, [m.id]: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNext(m.id); } }}
-                    />
+                    {pack > 1 ? (
+                      <div className="flex items-end gap-1.5">
+                        <label className="block">
+                          <span className="block text-[11px] text-muted-foreground">Box</span>
+                          <Input
+                            ref={(el) => { if (el) inputs.current.set(m.id, el); else inputs.current.delete(m.id); }}
+                            inputMode="numeric"
+                            value={boxes[m.id] ?? ""}
+                            aria-label={`Boxes of ${m.name}`}
+                            className={cn("h-9 w-14 px-2 sm:w-16", bad && "border-destructive")}
+                            onChange={(e) => setBoxes((c) => ({ ...c, [m.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); looseRefs.current.get(m.id)?.focus(); } }}
+                          />
+                        </label>
+                        <span className="pb-2 text-muted-foreground">+</span>
+                        <label className="block">
+                          <span className="block text-[11px] text-muted-foreground">Loose {m.sale_unit}</span>
+                          <Input
+                            ref={(el) => { if (el) looseRefs.current.set(m.id, el); else looseRefs.current.delete(m.id); }}
+                            inputMode="numeric"
+                            value={loose[m.id] ?? ""}
+                            aria-label={`Loose ${m.sale_unit} of ${m.name}`}
+                            className={cn("h-9 w-14 px-2 sm:w-16", bad && "border-destructive")}
+                            onChange={(e) => setLoose((c) => ({ ...c, [m.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNext(m.id); } }}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <Input
+                        ref={(el) => { if (el) inputs.current.set(m.id, el); else inputs.current.delete(m.id); }}
+                        inputMode="decimal"
+                        value={text}
+                        aria-label={`New stock for ${m.name}`}
+                        className={cn("h-9 w-20 sm:w-28", bad && "border-destructive")}
+                        onChange={(e) => setCounts((c) => ({ ...c, [m.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusNext(m.id); } }}
+                      />
+                    )}
                     {target != null && pack > 1 && <div className="mt-0.5 text-[11px] text-muted-foreground">= {stockLabel(target, m)}</div>}
                     {diff !== 0 && <div className={cn("mt-0.5 text-xs font-medium sm:hidden", diff > 0 ? "text-primary" : "text-destructive")}>{diff > 0 ? `+${diff}` : diff}</div>}
                     {diff > 0 && (
@@ -337,7 +379,7 @@ function StockCountPage() {
             </div>
           )}
           <div className="ml-auto flex gap-2">
-            {changes.length > 0 && <Button variant="ghost" onClick={() => { setCounts({}); setPrices({}); }} disabled={busy}>Clear</Button>}
+            {changes.length > 0 && <Button variant="ghost" onClick={clearAll} disabled={busy}>Clear</Button>}
             <Button className="h-10 px-6" disabled={busy || changes.length === 0} onClick={save}>
               {busy ? "Saving…" : `Save all (${changes.length})`}
             </Button>
