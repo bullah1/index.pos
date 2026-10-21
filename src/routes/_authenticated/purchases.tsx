@@ -141,7 +141,7 @@ function PurchaseDialog({ onClose }: { onClose: () => void }) {
 
         <div className="space-y-2">
           <div className="hidden grid-cols-[2fr_1fr_1fr_80px_1fr_1fr_32px] gap-2 text-xs text-muted-foreground md:grid">
-            <span>Medicine</span><span>Batch (optional)</span><span>Expiry (optional)</span><span>Qty</span><span>Cost / unit</span><span>Sell price</span><span />
+            <span>Medicine</span><span>Batch (optional)</span><span>Expiry (optional)</span><span>Qty</span><span>Purchase / unit</span><span>MRP / unit</span><span />
           </div>
           {lines.map((l, i) => (
             <div key={i} className="grid grid-cols-2 gap-2 rounded-md border p-2 md:grid-cols-[2fr_1fr_1fr_80px_1fr_1fr_32px] md:border-0 md:p-0">
@@ -154,7 +154,7 @@ function PurchaseDialog({ onClose }: { onClose: () => void }) {
                   onChange={(v) => {
                     const m = meds.find((x) => x.id === v);
                     const last = [...(m?.batches ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1);
-                    upd(i, { medicine_id: v, sale_price: Number(last?.sale_price ?? m?.default_price ?? 0), unit_cost: last ? Number(last.unit_cost) : defaultCost(m?.default_price) });
+                    upd(i, { medicine_id: v, sale_price: Number(last?.sale_price ?? m?.default_price ?? 0), unit_cost: defaultCost(last?.sale_price ?? m?.default_price) });
                   }}
                 />
               </div>
@@ -162,7 +162,7 @@ function PurchaseDialog({ onClose }: { onClose: () => void }) {
               <Input type="date" value={l.expiry_date} title="Expiry (optional)" aria-label="Expiry (optional)" onChange={(e) => upd(i, { expiry_date: e.target.value })} />
               <Input type="number" min={1} value={l.qty || ""} placeholder="Qty" onChange={(e) => upd(i, { qty: Math.max(0, Number(e.target.value) || 0) })} aria-label="Quantity" />
               <Input type="number" min={0} step="0.01" value={l.unit_cost} onChange={(e) => upd(i, { unit_cost: Number(e.target.value) })} aria-label="Cost" />
-              <Input type="number" min={0} step="0.01" value={l.sale_price} onChange={(e) => upd(i, { sale_price: Number(e.target.value) })} aria-label="Sale price" />
+              <Input type="number" min={0} step="0.01" value={l.sale_price} onChange={(e) => upd(i, { sale_price: Number(e.target.value), unit_cost: defaultCost(e.target.value) })} aria-label="Sale price" title="MRP — purchase price is set to MRP − 55%" />
               <Button variant="ghost" size="icon" aria-label="Remove line" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
             </div>
           ))}

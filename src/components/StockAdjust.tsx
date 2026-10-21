@@ -118,7 +118,7 @@ export function NewBatchDialog({ medicine, onClose }: { medicine: Medicine & { b
     batch_no: "",
     expiry_date: "",
     qty: "",
-    unit_cost: last ? String(last.unit_cost) : medicine.default_price ? String(defaultCost(medicine.default_price)) : "",
+    unit_cost: String(defaultCost(last?.sale_price ?? medicine.default_price)),
     sale_price: String(last?.sale_price ?? medicine.default_price ?? ""),
     reason: "opening" as AdjReason,
     note: "",
