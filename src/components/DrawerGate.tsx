@@ -1,7 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Lock, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { myDrawerQuery } from "@/lib/queries";
@@ -58,50 +56,33 @@ export function OpenDrawerForm({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** Blocks the page until today's drawer is open. */
+/**
+ * Never blocks: if today's drawer isn't open yet it is opened automatically with ৳0,
+ * so staff can sell straight away. Counting cash on the Cash Drawer page is optional.
+ */
 export function DrawerGate({ userId, children }: { userId: string; children: ReactNode }) {
-  const { data, isLoading, error } = useMyDrawer(userId);
-  if (isLoading) return <p className="p-6 text-sm text-muted-foreground">Checking cash drawer…</p>;
-  if (error) return <p className="p-6 text-sm text-destructive">Could not check the cash drawer: {errMsg(error)}</p>;
-  if (data?.status === "open") return <>{children}</>;
-
-  const closed = data?.status === "closed";
-  return (
-    <div className="mx-auto mt-10 max-w-md rounded-xl border bg-card p-6 shadow-sm">
-      <div className="mb-3 flex items-center gap-2 text-lg font-semibold">
-        {closed ? <Lock className="h-5 w-5 text-destructive" /> : <Wallet className="h-5 w-5 text-primary" />}
-        {closed ? "Today's drawer is closed" : "Open the cash drawer first"}
-      </div>
-      {closed ? (
-        <p className="text-sm text-muted-foreground">
-          You already counted and closed your drawer for today, so no more sales, expenses or payments can be made until tomorrow.
-        </p>
-      ) : (
-        <>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Count the cash in the drawer and enter it. Sales, expenses, purchases and payments are locked until the drawer is open.
-          </p>
-          <OpenDrawerForm />
-        </>
-      )}
-      <Link to="/cash-drawer" className="mt-4 inline-block text-sm text-primary underline-offset-4 hover:underline">Go to Cash Drawer</Link>
-    </div>
-  );
+  useAutoOpenDrawer(userId);
+  return <>{children}</>;
 }
 
-/** Thin warning shown on every page while the drawer is not open. */
-export function DrawerBanner({ userId }: { userId: string }) {
+export function useAutoOpenDrawer(userId: string) {
   const { data } = useMyDrawer(userId);
-  if (!data || data.status === "open") return null;
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/40 bg-warning/15 px-4 py-2 text-sm print:hidden">
-      <span className="flex items-center gap-2 font-medium text-warning-foreground">
-        <Lock className="h-4 w-4" />
-        {data.status === "closed"
-          ? "Your cash drawer is closed for today — sales, expenses and payments are locked."
-          : "Cash drawer is not open — sales, expenses and payments are locked."}
-      </span>
-      {data.status === "none" && <OpenDrawerForm compact />}
-    </div>
-  );
+  const qc = useQueryClient();
+  const tried = useRef(false);
+  useEffect(() => {
+    if (data?.status !== "none" || tried.current) return;
+    tried.current = true;
+    void supabase.rpc("cash_drawer_open", { p: { opening: 0 } as never }).then(({ error }) => {
+      if (!error) {
+        qc.invalidateQueries({ queryKey: ["my-drawer"] });
+        qc.invalidateQueries({ queryKey: ["cash-drawer"] });
+      }
+    });
+  }, [data?.status, qc]);
+}
+
+/** Opens today's drawer in the background on every page; shows nothing. */
+export function DrawerBanner({ userId }: { userId: string }) {
+  useAutoOpenDrawer(userId);
+  return null;
 }

@@ -147,7 +147,7 @@ function Layout() {
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></Button>
           <span className="truncate font-semibold">{shopName}</span>
         </header>
-        {path !== "/pos" && <DrawerBanner userId={user.id} />}
+        <DrawerBanner userId={user.id} />
         <main className="flex-1 p-3 md:p-6"><Outlet /></main>
       </div>
     </div>

@@ -40,7 +40,7 @@ function Expenses() {
   const { role, user } = Route.useRouteContext();
   const qc = useQueryClient();
   const drawer = useMyDrawer(user.id);
-  const drawerOpen = drawer.data?.status === "open";
+  const drawerOpen = drawer.data?.status !== undefined; // drawer opens automatically; never block
   const [toDelete, setToDelete] = useState<{ id: string; category: string; amount: number; expense_date: string } | null>(null);
   const today = bdToday();
   const [from, setFrom] = useState(monthStart(today));
@@ -153,7 +153,7 @@ function Expenses() {
           </TableBody>
         </Table>
       </div>
-      <p className="text-xs text-muted-foreground">A removed expense is kept in the audit log (who removed it and when). Adding or removing needs an open cash drawer.</p>
+      <p className="text-xs text-muted-foreground">A removed expense is kept in the audit log (who removed it and when).</p>
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
