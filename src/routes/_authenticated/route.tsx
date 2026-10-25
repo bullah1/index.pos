@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
-import { BarChart3, ListChecks, Boxes, ClipboardList, Building2, Coins, History, LayoutDashboard, Receipt as ReceiptIcon, Settings, Sparkles, Users, LogOut, Menu, Pill, ShoppingCart, Truck, Wallet } from "lucide-react";
+import { BarChart3, BookOpen, FileText, ListChecks, PackageSearch, Boxes, ClipboardList, Building2, Coins, History, LayoutDashboard, Receipt as ReceiptIcon, Settings, Sparkles, Users, LogOut, Menu, Pill, ShoppingCart, Truck, Wallet } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { settingsQuery } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,6 +38,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/pos", label: "POS Counter", icon: ShoppingCart },
       { to: "/sales", label: "Sales & Returns", icon: History },
+      { to: "/quotations", label: "Quotations", icon: FileText },
       { to: "/customers", label: "Customers & Due", icon: Users },
       { to: "/cash-drawer", label: "Cash Drawer", icon: Wallet },
     ],
@@ -47,10 +48,12 @@ const NAV: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/inventory", label: "Medicines & Stock", icon: Boxes },
       { to: "/stock-count", label: "Stock Entry", icon: ListChecks, mgr: true },
+      { to: "/reorder", label: "Reorder List", icon: PackageSearch },
       { to: "/purchases", label: "Purchases", icon: Truck, mgr: true },
       { to: "/stock-adjustments", label: "Stock Adjustments", icon: ClipboardList, mgr: true },
       { to: "/suppliers", label: "Suppliers", icon: Building2, mgr: true },
       { to: "/supplier-payments", label: "Supplier Payments", icon: Coins, mgr: true },
+      { to: "/supplier-ledger", label: "Supplier Ledger", icon: BookOpen, mgr: true },
     ],
   },
   {

@@ -39,3 +39,10 @@ export function parseCount(text: string, pack: number): number | null {
   if (parts.length === 2) return Number(parts[0]) * pack + Number(parts[1]);
   return Number(parts[0]);
 }
+
+/** Suggested order in boxes: enough for `cover` days of sales, minus what is on the shelf; never below 1 box when out of stock but selling. */
+export function suggestBoxes(stock: number, soldPerDay: number, pack: number, cover: number) {
+  const need = soldPerDay * cover - stock;
+  if (need <= 0) return stock <= 0 && soldPerDay > 0 ? 1 : 0;
+  return Math.ceil(need / pack);
+}

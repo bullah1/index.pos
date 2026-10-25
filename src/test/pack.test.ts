@@ -38,3 +38,13 @@ describe("pack helpers", () => {
     expect(parseCount("-5", 1)).toBeNull();
   });
 });
+
+import { suggestBoxes } from "@/lib/pack";
+describe("reorder suggestion", () => {
+  it("orders enough boxes for the cover period", () => {
+    expect(suggestBoxes(10, 2, 30, 30)).toBe(2); // need 60 - 10 = 50 caps → 2 boxes of 30
+    expect(suggestBoxes(100, 2, 30, 30)).toBe(0);
+    expect(suggestBoxes(0, 0.1, 1, 30)).toBe(3);
+    expect(suggestBoxes(0, 0, 1, 30)).toBe(0); // never sold: don't order
+  });
+});

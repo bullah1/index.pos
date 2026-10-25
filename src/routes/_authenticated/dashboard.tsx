@@ -12,6 +12,8 @@ import { PAY_METHODS, sellableStock } from "@/lib/pos";
 import { drawerSummary } from "@/lib/cash";
 import { addDays, cashDayQuery } from "@/lib/cashQuery";
 import { cn } from "@/lib/utils";
+import { openWhatsApp } from "@/lib/share";
+import { MessageCircle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Pharmacy POS" }, { name: "description", content: "Today's sales, cash, dues and stock alerts." }] }),
@@ -94,6 +96,27 @@ function Dashboard() {
   const byMethod = cash.data?.byMethod ?? new Map<string, number>();
   const received = [...byMethod.values()].reduce((a, v) => a + Math.max(0, v), 0);
   const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: "Asia/Dhaka" }).format(new Date()));
+  const dayReport = () => {
+    const f = (n: number) => `Tk ${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const lines = [
+      `*${settings.pharmacy_name} — Day report*`,
+      new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Dhaka" }).format(new Date()),
+      "------------------------",
+      `Sales: ${f(t.sales)} (${t.invoices} bills)`,
+      `Profit: ${f(t.profit)}${t.sales > 0 ? ` (${Math.round((t.profit / t.sales) * 100)}%)` : ""}`,
+      "",
+      "*Money received*",
+      ...PAY_METHODS.map((m) => ({ m, v: Math.max(0, byMethod.get(m.value) ?? 0) })).filter((x) => x.v > 0).map((x) => `${x.m.label}: ${f(x.v)}`),
+      `Total: ${f(received)}`,
+      "",
+      `Cash in drawer: ${f(sum.expected)}`,
+      `Customer dues: ${f(dues.data?.total ?? 0)}`,
+      ...(isMgr && (supplierOwed.data ?? 0) > 0 ? [`Owed to suppliers: ${f(supplierOwed.data ?? 0)}`] : []),
+      `Low / out of stock: ${alerts.low} / ${alerts.out}`,
+      `7-day sales: ${f(weekSales)}`,
+    ];
+    openWhatsApp(settings.phone, lines.join("\n"));
+  };
   const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
@@ -106,6 +129,9 @@ function Dashboard() {
         <div className="flex flex-wrap gap-2">
           <Button asChild><Link to="/pos" search={{}}><ShoppingCart className="mr-1.5 h-4 w-4" />New sale</Link></Button>
           {isMgr && <Button asChild variant="outline"><Link to="/stock-count"><ListChecks className="mr-1.5 h-4 w-4" />Stock entry</Link></Button>}
+          <Button variant="outline" className="border-[#25D366] text-[#128C7E] hover:bg-[#25D366]/10" onClick={dayReport} title={settings.phone ? `Send to ${settings.phone}` : "Choose who to send it to"}>
+            <MessageCircle className="mr-1.5 h-4 w-4" />Day report
+          </Button>
         </div>
       </div>
 

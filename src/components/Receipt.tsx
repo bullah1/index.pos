@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Copy, MessageCircle, MessageSquare, Printer, Share2 } from "lucide-react";
 import { toast } from "sonner";
+import { bdPhone, printElement } from "@/lib/share";
 import { supabase } from "@/integrations/supabase/client";
 import { settingsQuery, type Settings } from "@/lib/queries";
 import { amountInWords, bdDateTime, taka } from "@/lib/format";
@@ -83,35 +84,9 @@ export function ReceiptDialog({
   );
 }
 
-/**
- * Prints only the invoice, from a hidden frame with the app's styles, so it always comes out
- * clean at the top of the page (A4 or 80 mm roll) no matter which dialog it was opened from.
- */
 function printInvoice(fmt: "thermal" | "a4") {
   const el = document.querySelectorAll("#print-area");
-  const area = el[el.length - 1];
-  if (!area) return;
-  const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')].map((n) => n.outerHTML).join("");
-  const page = fmt === "a4" ? "@page { size: A4; margin: 12mm; }" : "@page { size: 80mm auto; margin: 3mm; }";
-  const frame = document.createElement("iframe");
-  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
-  document.body.appendChild(frame);
-  const doc = frame.contentDocument!;
-  doc.open();
-  doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice</title>${styles}<style>${page}
-    html,body{background:#fff!important;margin:0}
-    #print-area{border:0!important;border-radius:0!important;box-shadow:none!important;margin:0!important;max-width:none!important;width:100%!important}
-    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    @media print{body *{visibility:visible!important}#print-area{position:static!important}}</style></head>
-    <body class="font-sans">${area.outerHTML}</body></html>`);
-  doc.close();
-  const go = () => {
-    frame.contentWindow?.focus();
-    frame.contentWindow?.print();
-    setTimeout(() => frame.remove(), 1000);
-  };
-  // wait for fonts/styles inside the frame
-  setTimeout(go, 400);
+  printElement(el[el.length - 1], fmt);
 }
 
 /** A sale can take one medicine from several batches; the customer sees it as one line. */
@@ -301,14 +276,6 @@ function invoiceText(data: SaleData, settings: Settings | undefined) {
   if (s.status === "cancelled") L.push("*** CANCELLED ***");
   if (settings?.invoice_footer) L.push("", settings.invoice_footer);
   return L.join("\n");
-}
-
-/** 01XXXXXXXXX → 8801XXXXXXXXX (for WhatsApp links). */
-function bdPhone(p: string | null | undefined) {
-  const d = (p ?? "").replace(/\D/g, "");
-  if (/^01\d{9}$/.test(d)) return "88" + d;
-  if (/^8801\d{9}$/.test(d)) return d;
-  return "";
 }
 
 function SendBar({ data, settings }: { data: SaleData; settings: Settings | undefined }) {

@@ -11,7 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { customersQuery } from "@/lib/queries";
-import { bdDateTime, errMsg, taka } from "@/lib/format";
+import { bdDateTime, bdToday, errMsg, taka } from "@/lib/format";
+import { customerLedger, daysSince } from "@/lib/ledger";
+import { openWhatsApp, printElement } from "@/lib/share";
+import { settingsQuery } from "@/lib/queries";
+import { FileText, MessageCircle, Printer } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/customers")({
   head: () => ({
@@ -47,6 +51,30 @@ function Customers() {
   const isMgr = role === "admin" || role === "manager";
   const { data: customers } = useSuspenseQuery(customersQuery);
   const { data: dues } = useQuery(duesQuery);
+  const { data: settings } = useQuery(settingsQuery);
+  // Oldest unpaid bill per customer, for "due for N days".
+  const { data: oldest } = useQuery({
+    queryKey: ["customer-oldest-due"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("sales").select("customer_id, created_at").gt("due", 0).not("customer_id", "is", null).order("created_at").limit(5000);
+      if (error) throw error;
+      const m = new Map<string, string>();
+      for (const r of data) if (r.customer_id && !m.has(r.customer_id)) m.set(r.customer_id, r.created_at);
+      return m;
+    },
+  });
+  const today = bdToday();
+  const [statementId, setStatementId] = useState<string | null>(null);
+  const remind = (c: { name: string; business_name?: string | null; phone: string | null; due: number }, days: number | null) => {
+    const shop = settings?.pharmacy_name ?? "";
+    const text = [
+      `আসসালামু আলাইকুম ${c.business_name || c.name},`,
+      `${shop} এ আপনার বাকি আছে ৳${c.due.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${days ? ` (${days} দিন ধরে)` : ""}।`,
+      `সুবিধামতো সময়ে পরিশোধ করার অনুরোধ রইলো। ধন্যবাদ।`,
+      settings?.phone ? `যোগাযোগ: ${settings.phone}` : "",
+    ].filter(Boolean).join("\n");
+    openWhatsApp(c.phone, text);
+  };
   const [q, setQ] = useState("");
   const [onlyDue, setOnlyDue] = useState(false);
   const [kind, setKind] = useState<"all" | "retail" | "b2b">("all");
@@ -87,10 +115,10 @@ function Customers() {
         <Table>
           <TableHeader><TableRow>
             <TableHead>Name</TableHead><TableHead>Phone</TableHead><TableHead className="hidden md:table-cell">Address</TableHead>
-            <TableHead className="text-right">Due</TableHead><TableHead className="hidden text-right lg:table-cell">Credit limit</TableHead><TableHead />
+            <TableHead className="text-right">Due</TableHead><TableHead className="hidden text-right md:table-cell">Due since</TableHead><TableHead className="hidden text-right lg:table-cell">Credit limit</TableHead><TableHead />
           </TableRow></TableHeader>
           <TableBody>
-            {list.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No customers found.</TableCell></TableRow>}
+            {list.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No customers found.</TableCell></TableRow>}
             {list.map((c) => (
               <TableRow key={c.id}>
                 <TableCell>
@@ -105,10 +133,25 @@ function Customers() {
                 <TableCell className="text-right">
                   {c.due > 0 ? <><b className={Number(c.credit_limit) > 0 && c.due > Number(c.credit_limit) ? "text-destructive" : ""}>{taka(c.due)}</b> <Badge variant="outline">{c.open} inv</Badge></> : <span className="text-muted-foreground">—</span>}
                 </TableCell>
+                <TableCell className="hidden text-right md:table-cell">
+                  {(() => {
+                    const o = oldest?.get(c.id);
+                    if (!o || c.due <= 0) return <span className="text-muted-foreground">—</span>;
+                    const d = daysSince(o, today);
+                    return <span className={d > 30 ? "font-medium text-destructive" : d > 7 ? "text-amber-600" : "text-muted-foreground"}>{d} day{d === 1 ? "" : "s"}</span>;
+                  })()}
+                </TableCell>
                 <TableCell className="hidden text-right lg:table-cell">
                   {Number(c.credit_limit) > 0 ? <span className={c.due > Number(c.credit_limit) ? "font-medium text-destructive" : "text-muted-foreground"}>{taka(c.credit_limit)}</span> : <span className="text-muted-foreground">—</span>}
                 </TableCell>
                 <TableCell className="space-x-1 text-right whitespace-nowrap">
+                  {c.due > 0 && (
+                    <Button size="sm" variant="ghost" className="text-[#128C7E]" title="Send due reminder on WhatsApp"
+                      onClick={() => { const o = oldest?.get(c.id); remind(c, o ? daysSince(o, today) : null); }}>
+                      <MessageCircle className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" title="Statement" onClick={() => setStatementId(c.id)}><FileText className="h-4 w-4" /></Button>
                   <Button size="sm" variant="outline" onClick={() => setCollectId(c.id)}>{c.due > 0 ? "Collect" : "History"}</Button>
                   {isMgr && <Button size="sm" variant="ghost" onClick={() => setEdit({
                     id: c.id, name: c.name, phone: c.phone ?? "", address: c.address ?? "", notes: c.notes ?? "",
@@ -122,6 +165,7 @@ function Customers() {
         </Table>
       </div>
       {edit && <EditDialog value={edit} onClose={() => setEdit(null)} />}
+      {statementId && <StatementDialog customer={list.find((c) => c.id === statementId) ?? customers.find((c) => c.id === statementId)!} shop={settings} onClose={() => setStatementId(null)} />}
       {collectId && <CollectDialog customer={list.find((c) => c.id === collectId)!} onClose={() => setCollectId(null)} />}
     </div>
   );
@@ -251,6 +295,101 @@ function CollectDialog({ customer, onClose }: { customer: { id: string; name: st
             </ul>
           ) : <p className="text-sm text-muted-foreground">None yet.</p>}
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type StmtCustomer = { id: string; name: string; phone: string | null; address?: string | null; business_name?: string | null; customer_type?: string };
+
+function StatementDialog({ customer, shop, onClose }: { customer: StmtCustomer; shop: { pharmacy_name: string; address: string; phone: string } | undefined; onClose: () => void }) {
+  const today = bdToday();
+  const [from, setFrom] = useState(today.slice(0, 8) + "01");
+  const [to, setTo] = useState(today);
+  const q = useQuery({
+    queryKey: ["customer-statement", customer.id],
+    queryFn: async () => {
+      const s = await supabase.from("sales").select("id, invoice_no, created_at, total, returned_amount, status").eq("customer_id", customer.id).order("created_at").limit(5000);
+      if (s.error) throw s.error;
+      const ids = s.data.map((x) => x.id);
+      const pays: { sale_id: string; kind: string; method: string; amount: number; created_at: string }[] = [];
+      const rets: { sale_id: string; amount: number; created_at: string; kind: string }[] = [];
+      for (let i = 0; i < ids.length; i += 150) {
+        const [p, r] = await Promise.all([
+          supabase.from("sale_payments").select("sale_id, kind, method, amount, created_at").in("sale_id", ids.slice(i, i + 150)),
+          supabase.from("sale_returns").select("sale_id, amount, created_at, kind").in("sale_id", ids.slice(i, i + 150)),
+        ]);
+        if (p.error) throw p.error;
+        if (r.error) throw r.error;
+        pays.push(...p.data); rets.push(...r.data);
+      }
+      const c = await supabase.from("customer_payments").select("amount, method, created_at, note").eq("customer_id", customer.id).order("created_at");
+      if (c.error) throw c.error;
+      return { sales: s.data, pays, rets, cols: c.data };
+    },
+  });
+  const led = q.data ? customerLedger(q.data.sales, q.data.pays, q.data.rets, q.data.cols, from, to) : null;
+  const who = customer.business_name || customer.name;
+  const sendText = led ? [
+    `*${shop?.pharmacy_name ?? ""}* — Statement`,
+    `${who}`, `${from} to ${to}`, "------------------------",
+    `Opening due: Tk ${led.opening.toFixed(2)}`, `Bills: Tk ${led.billed.toFixed(2)}`, `Paid / returned: Tk ${led.paid.toFixed(2)}`,
+    `*Due now: Tk ${led.closing.toFixed(2)}*`,
+  ].join("\n") : "";
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader><DialogTitle>Statement — {who}</DialogTitle></DialogHeader>
+        <div className="flex flex-wrap items-end gap-2">
+          <div><Label htmlFor="sf" className="text-xs">From</Label><Input id="sf" type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} className="h-9" /></div>
+          <div><Label htmlFor="st" className="text-xs">To</Label><Input id="st" type="date" value={to} min={from} max={today} onChange={(e) => e.target.value && setTo(e.target.value)} className="h-9" /></div>
+          <div className="ml-auto flex gap-2">
+            <Button size="sm" className="bg-[#25D366] text-white hover:bg-[#1ebe5b]" disabled={!led} onClick={() => openWhatsApp(customer.phone, sendText)}><MessageCircle className="mr-1 h-4 w-4" />WhatsApp</Button>
+            <Button size="sm" disabled={!led} onClick={() => printElement(document.getElementById("print-area"))}><Printer className="mr-1 h-4 w-4" />Print / PDF</Button>
+          </div>
+        </div>
+        {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {q.error && <p className="text-sm text-destructive">{errMsg(q.error)}</p>}
+        {led && (
+          <div id="print-area" className="a4 rounded-md border bg-white p-5 text-[13px] text-black">
+            <div className="flex justify-between gap-4 border-b-2 border-black pb-2">
+              <div><div className="text-xl font-bold">{shop?.pharmacy_name}</div><div className="text-gray-600">{shop?.address}{shop?.phone ? ` · ${shop.phone}` : ""}</div></div>
+              <div className="text-right"><div className="text-xl font-bold">STATEMENT</div><div className="text-gray-600">{from} – {to}</div></div>
+            </div>
+            <div className="mt-2">
+              <div className="font-semibold">{who}{customer.customer_type === "b2b" && <span className="ml-1.5 rounded border border-black px-1 text-[10px] font-bold">B2B</span>}</div>
+              {customer.business_name && <div>{customer.name}</div>}
+              <div className="text-gray-600">{[customer.phone, customer.address].filter(Boolean).join(" · ")}</div>
+            </div>
+            <table className="mt-3 w-full border-collapse text-[12px]">
+              <thead><tr className="bg-gray-100 text-left">
+                <th className="border border-gray-300 px-2 py-1">Date</th><th className="border border-gray-300 px-2 py-1">Details</th><th className="border border-gray-300 px-2 py-1">Invoice</th>
+                <th className="border border-gray-300 px-2 py-1 text-right">Bill</th><th className="border border-gray-300 px-2 py-1 text-right">Paid / less</th><th className="border border-gray-300 px-2 py-1 text-right">Balance</th>
+              </tr></thead>
+              <tbody>
+                <tr><td className="border border-gray-300 px-2 py-1" colSpan={5}><i>Opening balance</i></td><td className="border border-gray-300 px-2 py-1 text-right font-medium">{taka(led.opening)}</td></tr>
+                {led.lines.map((l, i) => (
+                  <tr key={i}>
+                    <td className="whitespace-nowrap border border-gray-300 px-2 py-1">{bdDateTime(l.at).split(",")[0]}</td>
+                    <td className="border border-gray-300 px-2 py-1">{l.text}</td>
+                    <td className="border border-gray-300 px-2 py-1">{l.ref}</td>
+                    <td className="border border-gray-300 px-2 py-1 text-right">{l.debit ? taka(l.debit) : ""}</td>
+                    <td className="border border-gray-300 px-2 py-1 text-right">{l.credit ? taka(l.credit) : ""}</td>
+                    <td className="border border-gray-300 px-2 py-1 text-right">{taka(l.balance)}</td>
+                  </tr>
+                ))}
+                {led.lines.length === 0 && <tr><td colSpan={6} className="border border-gray-300 px-2 py-3 text-center text-gray-500">No activity in this period</td></tr>}
+              </tbody>
+            </table>
+            <div className="ml-auto mt-3 w-64 space-y-0.5">
+              <div className="flex justify-between"><span>Opening due</span><span>{taka(led.opening)}</span></div>
+              <div className="flex justify-between"><span>Bills</span><span>{taka(led.billed)}</span></div>
+              <div className="flex justify-between"><span>Paid / returned</span><span>−{taka(led.paid)}</span></div>
+              <div className="flex justify-between border-t-2 border-black pt-1 text-base font-bold"><span>Due now</span><span>{taka(led.closing)}</span></div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

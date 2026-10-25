@@ -525,6 +525,65 @@ export type Database = {
           },
         ]
       }
+      quotations: {
+        Row: {
+          created_at: string
+          created_by: string
+          customer_id: string | null
+          discount: number
+          id: string
+          items: Json
+          note: string | null
+          quote_no: string
+          sale_id: string | null
+          status: string
+          subtotal: number
+          total: number
+          updated_at: string
+          valid_until: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          customer_id?: string | null
+          discount?: number
+          id?: string
+          items?: Json
+          note?: string | null
+          quote_no?: string
+          sale_id?: string | null
+          status?: string
+          subtotal?: number
+          total?: number
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          customer_id?: string | null
+          discount?: number
+          id?: string
+          items?: Json
+          note?: string | null
+          quote_no?: string
+          sale_id?: string | null
+          status?: string
+          subtotal?: number
+          total?: number
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sale_items: {
         Row: {
           batch_id: string

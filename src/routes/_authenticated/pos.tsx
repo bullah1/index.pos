@@ -32,8 +32,10 @@ import { DrawerGate } from "@/components/DrawerGate";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/pos")({
-  validateSearch: (search: Record<string, unknown>): { edit?: string } =>
-    typeof search["edit"] === "string" && search["edit"] ? { edit: search["edit"] } : {},
+  validateSearch: (search: Record<string, unknown>): { edit?: string; quote?: string } => ({
+    ...(typeof search["edit"] === "string" && search["edit"] ? { edit: search["edit"] } : {}),
+    ...(typeof search["quote"] === "string" && search["quote"] ? { quote: search["quote"] } : {}),
+  }),
   head: () => ({ meta: [{ title: "POS Counter — Pharmacy POS" }, { name: "description", content: "Sell medicines at the counter." }] }),
   component: PosRoute,
 });
@@ -78,7 +80,8 @@ function PosPage() {
   const [receipt, setReceipt] = useState<{ id: string; cash?: number | undefined; change?: number | undefined } | null>(null);
   const [newCust, setNewCust] = useState(false);
   // Editing an earlier sale: the cart is loaded from it; saving replaces it with a new invoice.
-  const { edit } = Route.useSearch();
+  const { edit, quote } = Route.useSearch();
+  const [fromQuote, setFromQuote] = useState<{ id: string; no: string } | null>(null);
   const navigate = useNavigate();
   const [editing, setEditing] = useState<EditInfo | null>(null);
   const [cancelKey, setCancelKey] = useState(() => crypto.randomUUID());
@@ -157,6 +160,34 @@ function PosPage() {
     return () => { stop = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, meds.length]);
+
+  // Selling a confirmed quotation: load its lines (box items are sold per piece) and customer.
+  useEffect(() => {
+    if (!quote || meds.length === 0 || fromQuote?.id === quote) return;
+    void (async () => {
+      const { data, error } = await supabase.from("quotations").select("*").eq("id", quote).single();
+      if (error || !data) { toast.error("Could not load that quotation"); return; }
+      if (data.status !== "open") { toast.error(`${data.quote_no} is already ${data.status === "converted" ? "sold" : "cancelled"}`); navigate({ to: "/pos", search: {} }); return; }
+      const items = (data.items as unknown as { medicine_id: string; qty: number; price: number; unit: string }[]) ?? [];
+      const lines: CartLine[] = [];
+      for (const it of items) {
+        const m = medById.get(it.medicine_id);
+        if (!m) continue;
+        const pack = it.unit === "box" ? packSize(m) : 1;
+        const avail = sellableStock(m.batches, today);
+        const list = Number(fefoAllocate(m.batches, 1, today).allocations[0]?.batch.sale_price ?? m.default_price);
+        const unitPrice = Math.round((Number(it.price) / pack) * 100) / 100;
+        lines.push({ medicine_id: m.id, name: `${m.name}${m.strength ? " " + m.strength : ""}`, qty: Number(it.qty) * pack, unit_price: list, discount: 0, available: avail, ...(unitPrice !== list ? { price: unitPrice } : {}) });
+      }
+      setCart(lines);
+      if (data.customer_id) setCustomerId(data.customer_id);
+      setBillDiscount(Number(data.discount) > 0 ? String(data.discount) : "");
+      setFromQuote({ id: data.id, no: data.quote_no });
+      const short = lines.filter((l) => l.qty > l.available);
+      if (short.length) toast.warning(`Not enough stock for ${short.map((l) => l.name).join(", ")}`);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quote, meds.length]);
 
   function stopEditing() {
     setEditing(null);
@@ -318,6 +349,13 @@ function PosPage() {
     const r = data as { id: string; invoice_no: string; duplicate?: boolean };
     if (r.duplicate) toast.warning(`This sale was already saved as ${r.invoice_no}`);
     else if (editing) toast.success(`${editing.invoice_no} replaced by ${r.invoice_no}`);
+    else if (fromQuote) toast.success(`${fromQuote.no} sold as ${r.invoice_no}`);
+    if (fromQuote && !r.duplicate) {
+      await supabase.from("quotations").update({ status: "converted", sale_id: r.id }).eq("id", fromQuote.id);
+      qc.invalidateQueries({ queryKey: ["quotations"] });
+      setFromQuote(null);
+      navigate({ to: "/pos", search: {} });
+    }
     else toast.success(`Sale ${r.invoice_no} saved`);
     qc.invalidateQueries({ queryKey: ["medicines"] });
     qc.invalidateQueries({ queryKey: ["sales"] });
@@ -344,6 +382,13 @@ function PosPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
       <section className="min-w-0 space-y-3">
+        {fromQuote && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+            <span className="font-medium">Selling quotation {fromQuote.no}</span>
+            <span className="text-sky-800/80">Check the items and payment, then complete the sale.</span>
+            <Button variant="ghost" size="sm" className="ml-auto h-7" onClick={() => { setFromQuote(null); setCart([]); navigate({ to: "/pos", search: {} }); }}>Cancel</Button>
+          </div>
+        )}
         {editing && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm">
             <Pencil className="h-4 w-4 text-primary" />

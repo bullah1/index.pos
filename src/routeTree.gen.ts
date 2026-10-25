@@ -20,11 +20,14 @@ import { Route as AuthenticatedExpensesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedInventoryRouteImport } from './routes/_authenticated/inventory'
 import { Route as AuthenticatedPosRouteImport } from './routes/_authenticated/pos'
 import { Route as AuthenticatedPurchasesRouteImport } from './routes/_authenticated/purchases'
+import { Route as AuthenticatedQuotationsRouteImport } from './routes/_authenticated/quotations'
+import { Route as AuthenticatedReorderRouteImport } from './routes/_authenticated/reorder'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedSalesRouteImport } from './routes/_authenticated/sales'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedStockAdjustmentsRouteImport } from './routes/_authenticated/stock-adjustments'
 import { Route as AuthenticatedStockCountRouteImport } from './routes/_authenticated/stock-count'
+import { Route as AuthenticatedSupplierLedgerRouteImport } from './routes/_authenticated/supplier-ledger'
 import { Route as AuthenticatedSupplierPaymentsRouteImport } from './routes/_authenticated/supplier-payments'
 import { Route as AuthenticatedSuppliersRouteImport } from './routes/_authenticated/suppliers'
 
@@ -82,6 +85,16 @@ const AuthenticatedPurchasesRoute = AuthenticatedPurchasesRouteImport.update({
   path: '/purchases',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedQuotationsRoute = AuthenticatedQuotationsRouteImport.update({
+  id: '/quotations',
+  path: '/quotations',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedReorderRoute = AuthenticatedReorderRouteImport.update({
+  id: '/reorder',
+  path: '/reorder',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -108,6 +121,12 @@ const AuthenticatedStockCountRoute = AuthenticatedStockCountRouteImport.update({
   path: '/stock-count',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSupplierLedgerRoute =
+  AuthenticatedSupplierLedgerRouteImport.update({
+    id: '/supplier-ledger',
+    path: '/supplier-ledger',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSupplierPaymentsRoute =
   AuthenticatedSupplierPaymentsRouteImport.update({
     id: '/supplier-payments',
@@ -131,11 +150,14 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof AuthenticatedInventoryRoute
   '/pos': typeof AuthenticatedPosRoute
   '/purchases': typeof AuthenticatedPurchasesRoute
+  '/quotations': typeof AuthenticatedQuotationsRoute
+  '/reorder': typeof AuthenticatedReorderRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/sales': typeof AuthenticatedSalesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/stock-adjustments': typeof AuthenticatedStockAdjustmentsRoute
   '/stock-count': typeof AuthenticatedStockCountRoute
+  '/supplier-ledger': typeof AuthenticatedSupplierLedgerRoute
   '/supplier-payments': typeof AuthenticatedSupplierPaymentsRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
 }
@@ -150,11 +172,14 @@ export interface FileRoutesByTo {
   '/inventory': typeof AuthenticatedInventoryRoute
   '/pos': typeof AuthenticatedPosRoute
   '/purchases': typeof AuthenticatedPurchasesRoute
+  '/quotations': typeof AuthenticatedQuotationsRoute
+  '/reorder': typeof AuthenticatedReorderRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/sales': typeof AuthenticatedSalesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/stock-adjustments': typeof AuthenticatedStockAdjustmentsRoute
   '/stock-count': typeof AuthenticatedStockCountRoute
+  '/supplier-ledger': typeof AuthenticatedSupplierLedgerRoute
   '/supplier-payments': typeof AuthenticatedSupplierPaymentsRoute
   '/suppliers': typeof AuthenticatedSuppliersRoute
 }
@@ -171,11 +196,14 @@ export interface FileRoutesById {
   '/_authenticated/inventory': typeof AuthenticatedInventoryRoute
   '/_authenticated/pos': typeof AuthenticatedPosRoute
   '/_authenticated/purchases': typeof AuthenticatedPurchasesRoute
+  '/_authenticated/quotations': typeof AuthenticatedQuotationsRoute
+  '/_authenticated/reorder': typeof AuthenticatedReorderRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/sales': typeof AuthenticatedSalesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/stock-adjustments': typeof AuthenticatedStockAdjustmentsRoute
   '/_authenticated/stock-count': typeof AuthenticatedStockCountRoute
+  '/_authenticated/supplier-ledger': typeof AuthenticatedSupplierLedgerRoute
   '/_authenticated/supplier-payments': typeof AuthenticatedSupplierPaymentsRoute
   '/_authenticated/suppliers': typeof AuthenticatedSuppliersRoute
 }
@@ -192,11 +220,14 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/pos'
     | '/purchases'
+    | '/quotations'
+    | '/reorder'
     | '/reports'
     | '/sales'
     | '/settings'
     | '/stock-adjustments'
     | '/stock-count'
+    | '/supplier-ledger'
     | '/supplier-payments'
     | '/suppliers'
   fileRoutesByTo: FileRoutesByTo
@@ -211,11 +242,14 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/pos'
     | '/purchases'
+    | '/quotations'
+    | '/reorder'
     | '/reports'
     | '/sales'
     | '/settings'
     | '/stock-adjustments'
     | '/stock-count'
+    | '/supplier-ledger'
     | '/supplier-payments'
     | '/suppliers'
   id:
@@ -231,11 +265,14 @@ export interface FileRouteTypes {
     | '/_authenticated/inventory'
     | '/_authenticated/pos'
     | '/_authenticated/purchases'
+    | '/_authenticated/quotations'
+    | '/_authenticated/reorder'
     | '/_authenticated/reports'
     | '/_authenticated/sales'
     | '/_authenticated/settings'
     | '/_authenticated/stock-adjustments'
     | '/_authenticated/stock-count'
+    | '/_authenticated/supplier-ledger'
     | '/_authenticated/supplier-payments'
     | '/_authenticated/suppliers'
   fileRoutesById: FileRoutesById
@@ -325,6 +362,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPurchasesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/quotations': {
+      id: '/_authenticated/quotations'
+      path: '/quotations'
+      fullPath: '/quotations'
+      preLoaderRoute: typeof AuthenticatedQuotationsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/reorder': {
+      id: '/_authenticated/reorder'
+      path: '/reorder'
+      fullPath: '/reorder'
+      preLoaderRoute: typeof AuthenticatedReorderRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/reports': {
       id: '/_authenticated/reports'
       path: '/reports'
@@ -360,6 +411,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStockCountRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/supplier-ledger': {
+      id: '/_authenticated/supplier-ledger'
+      path: '/supplier-ledger'
+      fullPath: '/supplier-ledger'
+      preLoaderRoute: typeof AuthenticatedSupplierLedgerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/supplier-payments': {
       id: '/_authenticated/supplier-payments'
       path: '/supplier-payments'
@@ -386,11 +444,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedInventoryRoute: typeof AuthenticatedInventoryRoute
   AuthenticatedPosRoute: typeof AuthenticatedPosRoute
   AuthenticatedPurchasesRoute: typeof AuthenticatedPurchasesRoute
+  AuthenticatedQuotationsRoute: typeof AuthenticatedQuotationsRoute
+  AuthenticatedReorderRoute: typeof AuthenticatedReorderRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSalesRoute: typeof AuthenticatedSalesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedStockAdjustmentsRoute: typeof AuthenticatedStockAdjustmentsRoute
   AuthenticatedStockCountRoute: typeof AuthenticatedStockCountRoute
+  AuthenticatedSupplierLedgerRoute: typeof AuthenticatedSupplierLedgerRoute
   AuthenticatedSupplierPaymentsRoute: typeof AuthenticatedSupplierPaymentsRoute
   AuthenticatedSuppliersRoute: typeof AuthenticatedSuppliersRoute
 }
@@ -404,11 +465,14 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedInventoryRoute: AuthenticatedInventoryRoute,
   AuthenticatedPosRoute: AuthenticatedPosRoute,
   AuthenticatedPurchasesRoute: AuthenticatedPurchasesRoute,
+  AuthenticatedQuotationsRoute: AuthenticatedQuotationsRoute,
+  AuthenticatedReorderRoute: AuthenticatedReorderRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSalesRoute: AuthenticatedSalesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedStockAdjustmentsRoute: AuthenticatedStockAdjustmentsRoute,
   AuthenticatedStockCountRoute: AuthenticatedStockCountRoute,
+  AuthenticatedSupplierLedgerRoute: AuthenticatedSupplierLedgerRoute,
   AuthenticatedSupplierPaymentsRoute: AuthenticatedSupplierPaymentsRoute,
   AuthenticatedSuppliersRoute: AuthenticatedSuppliersRoute,
 }
