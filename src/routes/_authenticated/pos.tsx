@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Minus, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { Minus, Pencil, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { customersQuery, medicinesQuery, type MedicineWithBatches } from "@/lib/queries";
@@ -32,6 +32,8 @@ import { DrawerGate } from "@/components/DrawerGate";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/pos")({
+  validateSearch: (search: Record<string, unknown>): { edit?: string } =>
+    typeof search["edit"] === "string" && search["edit"] ? { edit: search["edit"] } : {},
   head: () => ({ meta: [{ title: "POS Counter — Pharmacy POS" }, { name: "description", content: "Sell medicines at the counter." }] }),
   component: PosRoute,
 });
@@ -75,8 +77,67 @@ function PosPage() {
   const [idemKey, setIdemKey] = useState(() => crypto.randomUUID());
   const [receipt, setReceipt] = useState<{ id: string; cash?: number | undefined; change?: number | undefined } | null>(null);
   const [newCust, setNewCust] = useState(false);
+  // Editing an earlier sale: the cart is loaded from it; saving replaces it with a new invoice.
+  const { edit } = Route.useSearch();
+  const navigate = useNavigate();
+  const [editing, setEditing] = useState<EditInfo | null>(null);
+  const [cancelKey, setCancelKey] = useState(() => crypto.randomUUID());
 
   const medById = useMemo(() => new Map(meds.map((m) => [m.id, m])), [meds]);
+
+  useEffect(() => {
+    if (!edit || meds.length === 0 || editing?.id === edit) return;
+    let stop = false;
+    void (async () => {
+      const [sr, ir, pr] = await Promise.all([
+        supabase.from("sales").select("*").eq("id", edit).single(),
+        supabase.from("sale_items").select("*").eq("sale_id", edit),
+        supabase.from("sale_payments").select("method, amount, kind").eq("sale_id", edit),
+      ]);
+      if (stop) return;
+      if (sr.error || !sr.data) { toast.error("Could not load that sale"); navigate({ to: "/pos", search: {} }); return; }
+      const sale = sr.data;
+      if (sale.status !== "completed" || Number(sale.returned_amount) > 0) {
+        toast.error(`${sale.invoice_no} can't be edited (it has returns or is cancelled)`);
+        navigate({ to: "/pos", search: {} });
+        return;
+      }
+      const lines = new Map<string, CartLine>();
+      for (const it of ir.data ?? []) {
+        const m = medById.get(it.medicine_id);
+        const qty = Number(it.qty) - Number(it.returned_qty ?? 0);
+        if (qty <= 0) continue;
+        const ex = lines.get(it.medicine_id);
+        if (ex) { ex.qty += qty; ex.discount += Number(it.discount); continue; }
+        // Stock the old sale took comes back when it is replaced, so it counts as available.
+        const back = (ir.data ?? []).filter((x) => x.medicine_id === it.medicine_id).reduce((a, x) => a + Number(x.qty) - Number(x.returned_qty ?? 0), 0);
+        const avail = (m ? sellableStock(m.batches, today) : 0) + back;
+        const listPrice = m ? Number(fefoAllocate(m.batches, 1, today).allocations[0]?.batch.sale_price ?? m.default_price) : Number(it.unit_price);
+        lines.set(it.medicine_id, {
+          medicine_id: it.medicine_id,
+          name: m ? `${m.name}${m.strength ? " " + m.strength : ""}` : it.medicine_name,
+          qty, unit_price: listPrice, discount: Number(it.discount), available: avail,
+          ...(Number(it.unit_price) !== listPrice ? { price: Number(it.unit_price) } : {}),
+        });
+      }
+      const paid = (pr.data ?? []).filter((x) => x.kind === "sale").sort((a, b) => Number(b.amount) - Number(a.amount));
+      setCart([...lines.values()]);
+      setCustomerId(sale.customer_id ?? WALKIN);
+      setBillDiscount(Number(sale.bill_discount) > 0 ? String(sale.bill_discount) : "");
+      setPayments([{ method: (paid[0]?.method as PayMethod) ?? "cash", amount: "" }]);
+      setAutoPay(true);
+      setEditing({ id: sale.id, invoice_no: sale.invoice_no, total: Number(sale.total), paid: Number(sale.paid), refundMethod: (paid[0]?.method as PayMethod) ?? "cash" });
+      setIdemKey(crypto.randomUUID());
+      setCancelKey(crypto.randomUUID());
+    })();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit, meds.length]);
+
+  function stopEditing() {
+    setEditing(null);
+    navigate({ to: "/pos", search: {} });
+  }
 
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -187,6 +248,7 @@ function PosPage() {
   };
 
   function reset() {
+    if (editing) { setEditing(null); navigate({ to: "/pos", search: {} }); }
     setCart([]);
     setBillDiscount("");
     setPayments([{ method: "cash", amount: "" }]);
@@ -208,15 +270,16 @@ function PosPage() {
     setBusy(true);
     const toSave = settlePayments(pays, totals.change);
     const cashGiven = pays.filter((p) => p.method === "cash").reduce((s, p) => s + p.amount, 0);
-    const { data, error } = await supabase.rpc("post_sale", {
-      p: {
-        idempotency_key: idemKey,
-        customer_id: hasCustomer ? customerId : null,
-        bill_discount: bill,
-        items: cart.map((l) => ({ medicine_id: l.medicine_id, qty: l.qty, discount: l.discount, ...(l.price != null ? { unit_price: l.price } : {}) })),
-        payments: toSave,
-      } as never,
-    });
+    const salePayload = {
+      idempotency_key: idemKey,
+      customer_id: hasCustomer ? customerId : null,
+      bill_discount: bill,
+      items: cart.map((l) => ({ medicine_id: l.medicine_id, qty: l.qty, discount: l.discount, ...(l.price != null ? { unit_price: l.price } : {}) })),
+      payments: toSave,
+    };
+    const { data, error } = editing
+      ? await saveEdit(editing, cancelKey, salePayload)
+      : await supabase.rpc("post_sale", { p: salePayload as never });
     setBusy(false);
     if (error) {
       toast.error(error.message);
@@ -225,6 +288,7 @@ function PosPage() {
     }
     const r = data as { id: string; invoice_no: string; duplicate?: boolean };
     if (r.duplicate) toast.warning(`This sale was already saved as ${r.invoice_no}`);
+    else if (editing) toast.success(`${editing.invoice_no} replaced by ${r.invoice_no}`);
     else toast.success(`Sale ${r.invoice_no} saved`);
     qc.invalidateQueries({ queryKey: ["medicines"] });
     qc.invalidateQueries({ queryKey: ["sales"] });
@@ -245,6 +309,14 @@ function PosPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
       <section className="min-w-0 space-y-3">
+        {editing && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm">
+            <Pencil className="h-4 w-4 text-primary" />
+            <span className="font-medium">Editing {editing.invoice_no}</span>
+            <span className="text-muted-foreground">Change items, then save. The old invoice is cancelled and a new one is made. Was {taka(editing.total)}.</span>
+            <Button variant="ghost" size="sm" className="ml-auto h-7" onClick={() => { stopEditing(); setCart([]); }}>Stop editing</Button>
+          </div>
+        )}
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -546,7 +618,7 @@ function PosPage() {
         </div>
 
         <Button className="h-12 w-full text-base" disabled={busy || cart.length === 0} onClick={complete}>
-          {busy ? "Saving…" : `Complete sale · ${taka(totals.payable)}`}
+          {busy ? "Saving…" : editing ? `Save changes · ${taka(totals.payable)}` : `Complete sale · ${taka(totals.payable)}`}
         </Button>
         {cart.length > 0 && <Button variant="ghost" size="sm" className="w-full" onClick={reset}>Clear cart</Button>}
       </aside>
@@ -598,4 +670,19 @@ function QuickCustomer({ open, onClose, onCreated }: { open: boolean; onClose: (
       </DialogContent>
     </Dialog>
   );
+}
+
+type EditInfo = { id: string; invoice_no: string; total: number; paid: number; refundMethod: PayMethod };
+
+/**
+ * Replace an earlier sale. Uses the one-step database function when it is installed (supabase/05_edit_sale.sql);
+ * otherwise cancels the old sale and posts the new one in two calls.
+ */
+async function saveEdit(e: EditInfo, cancelKey: string, sale: Record<string, unknown>) {
+  const one = await supabase.rpc("edit_sale" as never, { p: { sale_id: e.id, cancel_key: cancelKey, refund_method: e.refundMethod, sale } } as never);
+  const missing = one.error && (one.error.code === "PGRST202" || /could not find the function/i.test(one.error.message));
+  if (!missing) return one as { data: unknown; error: { message: string } | null };
+  const c = await supabase.rpc("return_sale", { p: { idempotency_key: cancelKey, sale_id: e.id, cancel: true, refund_method: e.refundMethod, reason: "Edited" } as never });
+  if (c.error && !/already cancelled/i.test(c.error.message)) return { data: null, error: c.error };
+  return supabase.rpc("post_sale", { p: sale as never });
 }

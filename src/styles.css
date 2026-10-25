@@ -161,3 +161,8 @@
   #print-area { position: absolute; left: 0; top: 0; width: 100%; border: 0 !important; padding: 0 !important; color: #000 !important; }
   #print-area.thermal { width: 72mm; max-width: 72mm; font-size: 11px; }
 }
+
+@media print {
+  #print-area.a4 { font-size: 12px; }
+  #print-area .bg-gray-100 { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

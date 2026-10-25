@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -152,6 +152,7 @@ function SaleDetail({ saleId, isMgr, onClose }: { saleId: string | null; isMgr: 
     },
   });
 
+  const navigate = useNavigate();
   function close() { setMode("view"); setQtys({}); setReason(""); onClose(); }
 
   const preview = useMemo(() => {
@@ -260,6 +261,9 @@ function SaleDetail({ saleId, isMgr, onClose }: { saleId: string | null; isMgr: 
             {mode === "view" ? (
               <>
                 <Button variant="outline" onClick={() => setReceipt(saleId)}>Print receipt</Button>
+                {isMgr && s?.status === "completed" && Number(s?.returned_amount) === 0 && (
+                  <Button onClick={() => { close(); navigate({ to: "/pos", search: { edit: s.id } }); }}>Edit sale</Button>
+                )}
                 {isMgr && open && <Button variant="outline" onClick={() => setMode("return")}>Return items</Button>}
                 {isMgr && open && Number(s?.returned_amount) === 0 && <Button variant="destructive" onClick={() => setMode("cancel")}>Cancel sale</Button>}
               </>
@@ -272,7 +276,7 @@ function SaleDetail({ saleId, isMgr, onClose }: { saleId: string | null; isMgr: 
               </>
             )}
           </DialogFooter>
-          {!isMgr && <p className="text-xs text-muted-foreground">Only managers can process returns or cancellations.</p>}
+          {!isMgr && <p className="text-xs text-muted-foreground">Only managers can edit, return or cancel a sale.</p>}
         </DialogContent>
       </Dialog>
       <ReceiptDialog saleId={receipt} onClose={() => setReceipt(null)} />

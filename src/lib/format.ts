@@ -43,3 +43,28 @@ export function autoBatchNo(d = new Date()) {
 /** Purchase price used when a medicine has no earlier batch: MRP − 55%. */
 export const COST_RATE = 0.45;
 export const defaultCost = (mrp: number | string | null | undefined) => Math.round(Number(mrp ?? 0) * COST_RATE * 100) / 100;
+
+const ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+const TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+function below100(n: number) { return n < 20 ? ONES[n]! : `${TENS[Math.floor(n / 10)]}${n % 10 ? " " + ONES[n % 10] : ""}`; }
+function below1000(n: number) {
+  const h = Math.floor(n / 100), r = n % 100;
+  return [h ? `${ONES[h]} Hundred` : "", r ? below100(r) : ""].filter(Boolean).join(" ");
+}
+/** Bangladeshi style (crore / lakh): 1250.5 → "Taka One Thousand Two Hundred Fifty and Fifty Paisa Only". */
+export function amountInWords(amount: number | string) {
+  const v = Math.round(Math.abs(Number(amount) || 0) * 100);
+  let n = Math.floor(v / 100);
+  const paisa = v % 100;
+  if (n === 0 && paisa === 0) return "Taka Zero Only";
+  const parts: string[] = [];
+  const crore = Math.floor(n / 10000000); n %= 10000000;
+  const lakh = Math.floor(n / 100000); n %= 100000;
+  const thousand = Math.floor(n / 1000); n %= 1000;
+  if (crore) parts.push(`${crore >= 1000 ? amountInWords(crore).replace(/^Taka | Only$/g, "") : below1000(crore)} Crore`);
+  if (lakh) parts.push(`${below100(lakh)} Lakh`);
+  if (thousand) parts.push(`${below100(thousand)} Thousand`);
+  if (n) parts.push(below1000(n));
+  const taka = parts.join(" ") || "Zero";
+  return `Taka ${taka}${paisa ? ` and ${below100(paisa)} Paisa` : ""} Only`;
+}
