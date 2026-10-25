@@ -28,6 +28,14 @@ const STATUS: Record<string, { label: string; v: "default" | "secondary" | "dest
   cancelled: { label: "Cancelled", v: "destructive" },
 };
 
+const METHOD_STYLE: Record<string, string> = {
+  cash: "bg-emerald-100 text-emerald-800",
+  bkash: "bg-pink-100 text-pink-800",
+  nagad: "bg-orange-100 text-orange-800",
+  rocket: "bg-violet-100 text-violet-800",
+  bank: "bg-sky-100 text-sky-800",
+};
+
 function daysAgo(n: number) { return bdToday(new Date(Date.now() - n * 86400000)); }
 
 function SalesPage() {
@@ -66,15 +74,59 @@ function SalesPage() {
       return out;
     },
   });
+  // How each sale was paid (cash / bKash / Nagad …), net of refunds.
+  const { data: pays } = useQuery({
+    queryKey: ["sales-payments", from, to, saleIds.length, saleIds[0]],
+    enabled: saleIds.length > 0,
+    queryFn: async () => {
+      const out = new Map<string, Map<string, number>>();
+      for (let i = 0; i < saleIds.length; i += 150) {
+        const { data: ps, error } = await supabase.from("sale_payments").select("sale_id, method, amount, kind").in("sale_id", saleIds.slice(i, i + 150));
+        if (error) throw error;
+        for (const x of ps ?? []) {
+          const m = out.get(x.sale_id) ?? new Map<string, number>();
+          m.set(x.method, (m.get(x.method) ?? 0) + (x.kind === "refund" ? -1 : 1) * Number(x.amount));
+          out.set(x.sale_id, m);
+        }
+      }
+      return out;
+    },
+  });
+  const [method, setMethod] = useState<string>("all");
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return data;
-    return data.filter((r) => [r.invoice_no, r.customers?.name, r.customers?.phone].some((f) => f?.toLowerCase().includes(s)));
-  }, [q, data]);
+    return data.filter((r) => {
+      if (method === "due" && !(Number(r.due) > 0)) return false;
+      if (method !== "all" && method !== "due" && !((pays?.get(r.id)?.get(method) ?? 0) > 0)) return false;
+      return !s || [r.invoice_no, r.customers?.name, r.customers?.phone].some((f) => f?.toLowerCase().includes(s));
+    });
+  }, [q, data, method, pays]);
+  // Money received per method for the sales shown (cancelled sales net to zero through their refunds).
+  const byMethod = useMemo(() => {
+    const t = new Map<string, number>();
+    for (const r of rows) for (const [k, v] of pays?.get(r.id) ?? []) t.set(k, (t.get(k) ?? 0) + v);
+    return t;
+  }, [rows, pays]);
+  const dueTotal = rows.reduce((a, r) => a + Number(r.due), 0);
 
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Sales History</h1>
+      <div className="flex flex-wrap gap-2">
+        {PAY_METHODS.map((m) => (
+          <button key={m.value} type="button" onClick={() => setMethod(method === m.value ? "all" : m.value)}
+            className={`rounded-lg border px-3 py-2 text-left ${method === m.value ? "border-primary bg-primary/10" : "bg-card hover:bg-accent/50"}`}>
+            <div className="text-xs text-muted-foreground">{m.label}</div>
+            <div className="font-semibold">{taka(Math.max(0, byMethod.get(m.value) ?? 0))}</div>
+          </button>
+        ))}
+        <button type="button" onClick={() => setMethod(method === "due" ? "all" : "due")}
+          className={`rounded-lg border px-3 py-2 text-left ${method === "due" ? "border-primary bg-primary/10" : "bg-card hover:bg-accent/50"}`}>
+          <div className="text-xs text-muted-foreground">Due (baki)</div>
+          <div className="font-semibold text-warning-foreground">{taka(dueTotal)}</div>
+        </button>
+        {method !== "all" && <Button variant="ghost" size="sm" className="self-center" onClick={() => setMethod("all")}>Show all</Button>}
+      </div>
       {data.length >= 1000 && <p className="text-xs text-muted-foreground">Showing the latest 1000 sales — narrow the dates to see older ones.</p>}
       <div className="flex flex-wrap items-end gap-2">
         <div className="relative min-w-60 flex-1">
@@ -87,12 +139,12 @@ function SalesPage() {
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
-            <tr><th className="p-2">Invoice</th><th className="p-2">Date</th><th className="p-2">Customer</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Due</th><th className="p-2">Status</th><th className="p-2">Courier</th></tr>
+            <tr><th className="p-2">Invoice</th><th className="p-2">Date</th><th className="p-2">Customer</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Due</th><th className="p-2">Paid by</th><th className="p-2">Status</th><th className="p-2">Courier</th></tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">Loading…</td></tr>}
-            {loadError && <tr><td colSpan={7} className="p-6 text-center text-destructive">Could not load sales: {errMsg(loadError)}</td></tr>}
-            {!isLoading && !loadError && rows.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No sales found for this period.</td></tr>}
+            {isLoading && <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">Loading…</td></tr>}
+            {loadError && <tr><td colSpan={8} className="p-6 text-center text-destructive">Could not load sales: {errMsg(loadError)}</td></tr>}
+            {!isLoading && !loadError && rows.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No sales found for this period.</td></tr>}
             {rows.map((r) => {
               const st = STATUS[r.status] ?? { label: r.status, v: "outline" as const };
               return (
@@ -102,6 +154,16 @@ function SalesPage() {
                   <td className="p-2">{r.customers?.name ?? "Walk-in"}</td>
                   <td className="p-2 text-right">{taka(Number(r.total) - Number(r.returned_amount))}</td>
                   <td className="p-2 text-right">{Number(r.due) > 0 ? taka(r.due) : "—"}</td>
+                  <td className="p-2">
+                    <div className="flex flex-wrap gap-1">
+                      {[...(pays?.get(r.id) ?? [])].filter(([, v]) => v > 0).map(([k, v]) => (
+                        <span key={k} className={`rounded px-1.5 py-0.5 text-xs font-medium ${METHOD_STYLE[k] ?? "bg-muted"}`} title={taka(v)}>
+                          {PAY_METHODS.find((m) => m.value === k)?.label ?? k}
+                        </span>
+                      ))}
+                      {Number(r.due) > 0 && <span className="rounded bg-warning/20 px-1.5 py-0.5 text-xs font-medium text-warning-foreground">Due</span>}
+                    </div>
+                  </td>
                   <td className="p-2"><Badge variant={st.v}>{st.label}</Badge></td>
                   <td className="p-2" onClick={(e) => e.stopPropagation()}>
                     {(() => {
