@@ -9,7 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { bdDateTime, bdToday, errMsg, taka } from "@/lib/format";
-import { drawerRows, drawerSummary, myDrawerRow, type CashMovement } from "@/lib/cash";
+import { drawerSummary, myDrawerRow } from "@/lib/cash";
+import { addDays, cashDayQuery } from "@/lib/cashQuery";
+import { PAY_METHODS } from "@/lib/pos";
 
 export const Route = createFileRoute("/_authenticated/cash-drawer")({
   head: () => ({
@@ -25,12 +27,6 @@ export const Route = createFileRoute("/_authenticated/cash-drawer")({
   component: CashDrawer,
 });
 
-const iso = (day: string) => new Date(day + "T00:00:00+06:00").toISOString();
-function addDays(day: string, n: number) {
-  const d = new Date(day + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 function CashDrawer() {
   const { user, role } = Route.useRouteContext();
@@ -42,63 +38,7 @@ function CashDrawer() {
   const [counted, setCounted] = useState("");
   const [note, setNote] = useState("");
 
-  const data = useQuery({
-    queryKey: ["cash-drawer", day, user.id, isMgr],
-    queryFn: async () => {
-      const from = iso(day);
-      const to = iso(addDays(day, 1));
-
-      let cpQuery = supabase
-        .from("customer_payments")
-        .select("created_by, amount")
-        .eq("method", "cash")
-        .gte("created_at", from)
-        .lt("created_at", to)
-        .limit(5000);
-      if (!isMgr) cpQuery = cpQuery.eq("created_by", user.id);
-
-      const [sp, cp, dr, pr] = await Promise.all([
-        supabase
-          .from("sale_payments")
-          .select("created_by, amount, kind")
-          .eq("method", "cash")
-          .gte("created_at", from)
-          .lt("created_at", to)
-          .limit(5000),
-        cpQuery,
-        supabase.from("cash_drawers").select("id, user_id, opening, counted, note, closed_at").eq("drawer_date", day).limit(500),
-        supabase.from("profiles").select("id, full_name").limit(500),
-      ]);
-      if (sp.error) throw sp.error;
-      if (cp.error) throw cp.error;
-      if (dr.error) throw dr.error;
-      if (pr.error) throw pr.error;
-
-      let expenses: CashMovement[] = [];
-      let supplierPayments: CashMovement[] = [];
-      if (isMgr) {
-        const [ex, su] = await Promise.all([
-          supabase.from("expenses").select("created_by, amount").eq("method", "cash").eq("expense_date", day).limit(5000),
-          supabase.from("supplier_payments").select("created_by, amount").eq("method", "cash").eq("payment_date", day).limit(5000),
-        ]);
-        if (ex.error) throw ex.error;
-        if (su.error) throw su.error;
-        expenses = ex.data;
-        supplierPayments = su.data;
-      }
-
-      // Due collections live in customer_payments; the matching sale_payments rows are the same money, so they are skipped here.
-      const rows = drawerRows({
-        drawers: dr.data.map((d) => ({ user_id: d.user_id, opening: d.opening, counted: d.counted })),
-        cashSales: sp.data.filter((r) => r.kind === "sale"),
-        dueCollections: cp.data,
-        cashRefunds: sp.data.filter((r) => r.kind === "refund"),
-        expenses,
-        supplierPayments,
-      });
-      return { rows, names: new Map(pr.data.map((p) => [p.id, p.full_name])), drawers: dr.data };
-    },
-  });
+  const data = useQuery(cashDayQuery(day, user.id, isMgr));
 
   const openDrawer = useMutation({
     mutationFn: async () => {
@@ -140,169 +80,136 @@ function CashDrawer() {
   const myRec = data.data?.drawers.find((d) => d.user_id === user.id) ?? null;
   const name = (id: string) => data.data?.names.get(id) ?? (id === user.id ? "You" : "Staff");
 
+  const byMethod = data.data?.byMethod ?? new Map<string, number>();
+  const closed = myRec?.closed_at != null;
+  const diff = Number(counted) - (mine?.expected ?? 0);
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-5">
       <div className="flex flex-wrap items-end gap-3">
-        <h1 className="mr-auto text-2xl font-semibold">Cash Drawer</h1>
-        <div>
-          <Label htmlFor="d">Date</Label>
-          <Input id="d" type="date" value={day} max={today} onChange={(e) => setDay(e.target.value)} />
+        <div className="mr-auto">
+          <h1 className="text-2xl font-semibold tracking-tight">Cash Drawer</h1>
+          <p className="text-sm text-muted-foreground">Count the cash at the end of the day and check it matches.</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="sm" onClick={() => setDay(addDays(day, -1))}>‹</Button>
+          <Input type="date" value={day} max={today} onChange={(e) => setDay(e.target.value)} className="h-9 w-40" aria-label="Date" />
+          <Button variant="outline" size="sm" disabled={day >= today} onClick={() => setDay(addDays(day, 1))}>›</Button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card icon={Wallet} label="Opening float" value={taka(sum.opening)} sub={`${rows.length} drawer${rows.length === 1 ? "" : "s"}`} />
-        <Card icon={ArrowDownLeft} label="Cash in" value={taka(sum.cashIn)} sub="Counter sales + due collections" />
-        <Card icon={ArrowUpRight} label="Cash out" value={taka(sum.cashOut)} sub="Refunds, expenses, supplier payments" />
-        <Card icon={Wallet} label="Should be in drawer" value={taka(sum.expected)} sub={sum.unclosed > 0 ? `${sum.unclosed} drawer(s) not counted` : "All drawers counted"} />
-      </div>
+      {data.error && <p className="text-sm text-destructive">Could not load the drawer: {errMsg(data.error)}</p>}
 
-      <section className="rounded-lg border p-4">
-        <h2 className="font-semibold">My drawer</h2>
-
-        {data.isLoading && <p className="mt-3 text-sm text-muted-foreground">Loading…</p>}
-
-        {data.error && <p className="mt-3 text-sm text-destructive">Could not load the drawer.</p>}
-
-        {data.data && !myRec && (
-          <form
-            className="mt-3 grid gap-3 sm:grid-cols-3 sm:items-end"
-            onSubmit={(e) => {
-              e.preventDefault();
-              openDrawer.mutate();
-            }}
-          >
-            <div>
-              <Label htmlFor="op">Opening cash (৳)</Label>
-              <Input id="op" type="number" step="0.01" min="0" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" />
-            </div>
-            <div>
-              <Label htmlFor="on">Note</Label>
-              <Input id="on" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Change taken from bank" />
-            </div>
-            <Button type="submit" disabled={openDrawer.isPending}>Open drawer</Button>
-          </form>
-        )}
-
-        {data.data && myRec && myRec.closed_at === null && (
-          <div className="mt-3 space-y-4">
-            <div className="grid gap-3 text-sm sm:grid-cols-3">
-              <Mini label="Opening float" value={taka(mine?.opening)} />
-              <Mini label="Expected now" value={taka(mine?.expected)} />
-              <Mini label="Cash in today" value={taka(mine?.cashIn)} />
-            </div>
-            <form
-              className="grid gap-3 sm:grid-cols-3 sm:items-end"
-              onSubmit={(e) => {
-                e.preventDefault();
-                closeDrawer.mutate();
-              }}
-            >
-              <div>
-                <Label htmlFor="ct">Cash counted (৳)</Label>
-                <Input id="ct" type="number" step="0.01" min="0" value={counted} onChange={(e) => setCounted(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="cn">Note</Label>
-                <Input id="cn" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Short by ৳50, will check" />
-              </div>
-              <Button type="submit" disabled={closeDrawer.isPending}>Count &amp; close drawer</Button>
-            </form>
-            <form
-              className="grid gap-3 sm:grid-cols-3 sm:items-end"
-              onSubmit={(e) => {
-                e.preventDefault();
-                openDrawer.mutate();
-              }}
-            >
-              <div>
-                <Label htmlFor="op2">Correct opening cash (৳)</Label>
-                <Input id="op2" type="number" step="0.01" min="0" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder={String(mine?.opening ?? 0)} />
-              </div>
-              <div>
-                <Label htmlFor="on2">Note</Label>
-                <Input id="on2" value={note} onChange={(e) => setNote(e.target.value)} />
-              </div>
-              <Button type="submit" variant="outline" disabled={openDrawer.isPending}>Save opening</Button>
-            </form>
-          </div>
-        )}
-
-        {data.data && myRec && myRec.closed_at !== null && (
-          <div className="mt-3 space-y-3">
-            <div className="grid gap-3 text-sm sm:grid-cols-4">
-              <Mini label="Opening float" value={taka(mine?.opening)} />
-              <Mini label="Expected" value={taka(mine?.expected)} />
-              <Mini label="Counted" value={taka(mine?.counted)} />
-              <div className="rounded-md bg-muted p-3">
-                <div className="text-muted-foreground">Difference</div>
-                <div className={"text-lg font-semibold " + ((mine?.difference ?? 0) === 0 ? "" : "text-destructive")}>{taka(mine?.difference)}</div>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">Closed on {bdDateTime(myRec.closed_at)}. A closed drawer can't be changed, so the record stays trustworthy.</p>
-          </div>
-        )}
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 p-6 text-white">
+        <Wallet className="absolute -right-6 -top-6 h-40 w-40 text-white/5" />
+        <div className="text-sm text-white/70">{day === today ? "Should be in the drawer now" : `Should have been in the drawer · ${day}`}</div>
+        <div className="mt-1 text-4xl font-semibold tracking-tight">{data.isLoading ? "…" : taka(sum.expected)}</div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <Stat icon={Wallet} k="Opening cash" v={taka(sum.opening)} />
+          <Stat icon={ArrowDownLeft} k="Cash in" v={"+" + taka(sum.cashIn)} hint="Cash sales + dues collected" />
+          <Stat icon={ArrowUpRight} k="Cash out" v={"−" + taka(sum.cashOut)} hint="Refunds, expenses, supplier cash" />
+        </div>
       </section>
 
-      <section className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Staff</TableHead>
-              <TableHead className="text-right">Opening</TableHead>
-              <TableHead className="text-right">Cash sales</TableHead>
-              <TableHead className="text-right">Due collected</TableHead>
-              <TableHead className="text-right">Refunds</TableHead>
-              {isMgr && <TableHead className="text-right">Expenses</TableHead>}
-              {isMgr && <TableHead className="text-right">Supplier paid</TableHead>}
-              <TableHead className="text-right">Expected</TableHead>
-              <TableHead className="text-right">Counted</TableHead>
-              <TableHead className="text-right">Diff</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.isLoading && <TableRow><TableCell colSpan={10} className="text-muted-foreground">Loading…</TableCell></TableRow>}
-            {!data.isLoading && rows.length === 0 && (
-              <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">No cash activity on this day.</TableCell></TableRow>
+      <section className="rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">Other money received</h2>
+        <p className="text-xs text-muted-foreground">Not in the drawer — check these in your phone / bank.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-4">
+          {PAY_METHODS.filter((m) => m.value !== "cash").map((m) => (
+            <div key={m.value} className="rounded-lg bg-muted/60 px-3 py-2">
+              <div className="text-xs text-muted-foreground">{m.label}</div>
+              <div className="font-semibold">{taka(Math.max(0, byMethod.get(m.value) ?? 0))}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border bg-card p-5">
+        <h2 className="font-semibold">{closed ? "Counted" : "Count the cash"}</h2>
+        {!closed ? (
+          <form className="mt-3 space-y-3" onSubmit={(e) => { e.preventDefault(); if (myRec && day === today) closeDrawer.mutate(); }}>
+            <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
+              <div>
+                <Label htmlFor="ct">Cash you counted (৳)</Label>
+                <Input id="ct" type="number" inputMode="decimal" step="0.01" min="0" value={counted} onChange={(e) => setCounted(e.target.value)} className="h-11 text-lg" placeholder="0" />
+              </div>
+              <div>
+                <Label htmlFor="cn">Note (optional)</Label>
+                <Input id="cn" value={note} onChange={(e) => setNote(e.target.value)} className="h-11" placeholder="e.g. ৳50 short" />
+              </div>
+              <Button type="submit" className="h-11" disabled={closeDrawer.isPending || !myRec || day !== today}>Save count &amp; close day</Button>
+            </div>
+            {counted.trim() !== "" && (
+              <div className={"rounded-md px-3 py-2 text-sm font-medium " + (Math.abs(diff) < 0.01 ? "bg-emerald-50 text-emerald-700" : diff > 0 ? "bg-sky-50 text-sky-700" : "bg-rose-50 text-rose-700")}>
+                {Math.abs(diff) < 0.01 ? "Matches exactly ✓" : diff > 0 ? `${taka(diff)} extra in the drawer` : `${taka(-diff)} short`}
+              </div>
             )}
-            {rows.map((r) => (
-              <TableRow key={r.user_id}>
-                <TableCell>{name(r.user_id)}</TableCell>
-                <TableCell className="text-right">{taka(r.opening)}</TableCell>
-                <TableCell className="text-right">{taka(r.cashSales)}</TableCell>
-                <TableCell className="text-right">{taka(r.dueCollections)}</TableCell>
-                <TableCell className="text-right">{taka(r.cashRefunds)}</TableCell>
-                {isMgr && <TableCell className="text-right">{taka(r.expenses)}</TableCell>}
-                {isMgr && <TableCell className="text-right">{taka(r.supplierPayments)}</TableCell>}
-                <TableCell className="text-right font-medium">{taka(r.expected)}</TableCell>
-                <TableCell className="text-right">{r.counted === null ? <span className="text-muted-foreground">open</span> : taka(r.counted)}</TableCell>
-                <TableCell className={"text-right font-medium " + ((r.difference ?? 0) === 0 ? "" : "text-destructive")}>
-                  {r.difference === null ? <span className="text-muted-foreground">—</span> : taka(r.difference)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            {!myRec && day === today && <p className="text-xs text-muted-foreground">The drawer opens by itself with the first sale today.</p>}
+            {day !== today && !myRec && <p className="text-xs text-muted-foreground">No drawer was used on this day.</p>}
+          </form>
+        ) : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <MiniStat k="Should be" v={taka(mine?.expected)} />
+            <MiniStat k="Counted" v={taka(mine?.counted)} />
+            <MiniStat k="Difference" v={taka(mine?.difference)} bad={(mine?.difference ?? 0) !== 0} />
+            <p className="text-xs text-muted-foreground sm:col-span-3">Closed {bdDateTime(myRec!.closed_at!)}. Sales after closing are still allowed.</p>
+          </div>
+        )}
+        {myRec && !closed && day === today && (
+          <details className="mt-4 text-sm">
+            <summary className="cursor-pointer text-muted-foreground">Started the day with cash in the drawer? Set opening cash</summary>
+            <form className="mt-2 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); openDrawer.mutate(); }}>
+              <Input type="number" step="0.01" min="0" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder={String(mine?.opening ?? 0)} className="w-40" />
+              <Button type="submit" variant="outline" disabled={openDrawer.isPending}>Save opening cash</Button>
+            </form>
+          </details>
+        )}
       </section>
 
-      <p className="text-xs text-muted-foreground">
-        Due collections are counted as cash coming in, not as new sales. Expenses and supplier payments are only visible to managers,
-        so a cashier's drawer shows the counter cash they handled.
-      </p>
+      {isMgr && rows.length > 1 && (
+        <section className="rounded-xl border">
+          <div className="border-b px-4 py-3 font-semibold">By staff</div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Staff</TableHead>
+                <TableHead className="text-right">Opening</TableHead>
+                <TableHead className="text-right">Cash in</TableHead>
+                <TableHead className="text-right">Cash out</TableHead>
+                <TableHead className="text-right">Should be</TableHead>
+                <TableHead className="text-right">Counted</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.user_id}>
+                  <TableCell>{name(r.user_id)}</TableCell>
+                  <TableCell className="text-right">{taka(r.opening)}</TableCell>
+                  <TableCell className="text-right">{taka(r.cashIn)}</TableCell>
+                  <TableCell className="text-right">{taka(r.cashOut)}</TableCell>
+                  <TableCell className="text-right font-medium">{taka(r.expected)}</TableCell>
+                  <TableCell className={"text-right " + ((r.difference ?? 0) !== 0 ? "text-destructive" : "")}>{r.counted === null ? <span className="text-muted-foreground">open</span> : taka(r.counted)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+      )}
     </div>
   );
 }
 
-function Card({ icon: Icon, label, value, sub }: { icon: typeof Wallet; label: string; value: string; sub: string }) {
+function Stat({ icon: Icon, k, v, hint }: { icon: typeof Wallet; k: string; v: string; hint?: string }) {
   return (
-    <div className="rounded-lg border p-4">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground"><Icon className="h-4 w-4 text-primary" />{label}</div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-      <div className="text-xs text-muted-foreground">{sub}</div>
+    <div className="rounded-lg bg-white/10 px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs text-white/70"><Icon className="h-3.5 w-3.5" />{k}</div>
+      <div className="text-lg font-semibold">{v}</div>
+      {hint && <div className="text-[11px] text-white/50">{hint}</div>}
     </div>
   );
 }
 
-function Mini({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-md bg-muted p-3"><div className="text-muted-foreground">{label}</div><div className="text-lg font-semibold">{value}</div></div>;
+function MiniStat({ k, v, bad }: { k: string; v: string; bad?: boolean }) {
+  return <div className="rounded-lg bg-muted/60 px-3 py-2"><div className="text-xs text-muted-foreground">{k}</div><div className={"text-lg font-semibold " + (bad ? "text-destructive" : "")}>{v}</div></div>;
 }
+

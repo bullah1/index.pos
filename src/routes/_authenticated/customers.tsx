@@ -30,6 +30,9 @@ export const Route = createFileRoute("/_authenticated/customers")({
 const METHODS = ["cash", "bkash", "nagad", "rocket", "bank"] as const;
 type Method = (typeof METHODS)[number];
 
+type CustForm = { id?: string; name: string; phone: string; address: string; notes: string; customer_type: "retail" | "b2b"; business_name: string; discount_pct: string; credit_limit: string };
+const blankCustomer = (type: "retail" | "b2b" = "retail"): CustForm => ({ name: "", phone: "", address: "", notes: "", customer_type: type, business_name: "", discount_pct: "", credit_limit: "" });
+
 const duesQuery = {
   queryKey: ["customer-dues"],
   queryFn: async () => {
@@ -46,26 +49,37 @@ function Customers() {
   const { data: dues } = useQuery(duesQuery);
   const [q, setQ] = useState("");
   const [onlyDue, setOnlyDue] = useState(false);
-  const [edit, setEdit] = useState<null | { id?: string; name: string; phone: string; address: string; notes: string }>(null);
+  const [kind, setKind] = useState<"all" | "retail" | "b2b">("all");
+  const [edit, setEdit] = useState<null | CustForm>(null);
   const [collectId, setCollectId] = useState<string | null>(null);
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
     return customers
       .map((c) => ({ ...c, due: dues?.get(c.id)?.due ?? 0, open: dues?.get(c.id)?.open ?? 0 }))
-      .filter((c) => (!s || c.name.toLowerCase().includes(s) || (c.phone ?? "").includes(s)) && (!onlyDue || c.due > 0))
+      .filter((c) => (!s || c.name.toLowerCase().includes(s) || (c.phone ?? "").includes(s) || (c.business_name ?? "").toLowerCase().includes(s)) && (!onlyDue || c.due > 0))
+      .filter((c) => kind === "all" || (c.customer_type ?? "retail") === kind)
       .sort((a, b) => b.due - a.due || a.name.localeCompare(b.name));
-  }, [customers, dues, q, onlyDue]);
+  }, [customers, dues, q, onlyDue, kind]);
+  const b2bCount = customers.filter((c) => c.customer_type === "b2b").length;
   const totalDue = list.reduce((a, c) => a + c.due, 0);
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-auto text-2xl font-semibold">Customers & Due</h1>
-        <Button onClick={() => setEdit({ name: "", phone: "", address: "", notes: "" })}>Add customer</Button>
+        <Button variant="outline" onClick={() => setEdit(blankCustomer("b2b"))}>Add B2B customer</Button>
+        <Button onClick={() => setEdit(blankCustomer())}>Add customer</Button>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Input className="max-w-xs" placeholder="Search name or phone" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input className="max-w-xs" placeholder="Search name, shop or phone" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="flex rounded-md border p-0.5">
+          {(["all", "retail", "b2b"] as const).map((k) => (
+            <Button key={k} size="sm" variant={kind === k ? "secondary" : "ghost"} className="h-7" onClick={() => setKind(k)}>
+              {k === "all" ? "All" : k === "retail" ? "Retail" : `B2B (${b2bCount})`}
+            </Button>
+          ))}
+        </div>
         <Button variant={onlyDue ? "default" : "outline"} size="sm" onClick={() => setOnlyDue(!onlyDue)}>Only with due</Button>
         <span className="ml-auto text-sm">Total due: <b>{taka(totalDue)}</b></span>
       </div>
@@ -73,21 +87,34 @@ function Customers() {
         <Table>
           <TableHeader><TableRow>
             <TableHead>Name</TableHead><TableHead>Phone</TableHead><TableHead className="hidden md:table-cell">Address</TableHead>
-            <TableHead className="text-right">Due</TableHead><TableHead />
+            <TableHead className="text-right">Due</TableHead><TableHead className="hidden text-right lg:table-cell">Credit limit</TableHead><TableHead />
           </TableRow></TableHeader>
           <TableBody>
-            {list.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No customers found.</TableCell></TableRow>}
+            {list.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No customers found.</TableCell></TableRow>}
             {list.map((c) => (
               <TableRow key={c.id}>
-                <TableCell className="font-medium">{c.name}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5 font-medium">
+                    {c.name}
+                    {c.customer_type === "b2b" && <Badge className="h-5 bg-indigo-600 px-1.5 text-[10px] hover:bg-indigo-600">B2B{Number(c.discount_pct) > 0 ? ` −${Number(c.discount_pct)}%` : ""}</Badge>}
+                  </div>
+                  {c.business_name && <div className="text-xs text-muted-foreground">{c.business_name}</div>}
+                </TableCell>
                 <TableCell>{c.phone}</TableCell>
                 <TableCell className="hidden md:table-cell text-muted-foreground">{c.address}</TableCell>
                 <TableCell className="text-right">
-                  {c.due > 0 ? <><b>{taka(c.due)}</b> <Badge variant="outline">{c.open} inv</Badge></> : <span className="text-muted-foreground">—</span>}
+                  {c.due > 0 ? <><b className={Number(c.credit_limit) > 0 && c.due > Number(c.credit_limit) ? "text-destructive" : ""}>{taka(c.due)}</b> <Badge variant="outline">{c.open} inv</Badge></> : <span className="text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="hidden text-right lg:table-cell">
+                  {Number(c.credit_limit) > 0 ? <span className={c.due > Number(c.credit_limit) ? "font-medium text-destructive" : "text-muted-foreground"}>{taka(c.credit_limit)}</span> : <span className="text-muted-foreground">—</span>}
                 </TableCell>
                 <TableCell className="space-x-1 text-right whitespace-nowrap">
                   <Button size="sm" variant="outline" onClick={() => setCollectId(c.id)}>{c.due > 0 ? "Collect" : "History"}</Button>
-                  {isMgr && <Button size="sm" variant="ghost" onClick={() => setEdit({ id: c.id, name: c.name, phone: c.phone ?? "", address: c.address ?? "", notes: c.notes ?? "" })}>Edit</Button>}
+                  {isMgr && <Button size="sm" variant="ghost" onClick={() => setEdit({
+                    id: c.id, name: c.name, phone: c.phone ?? "", address: c.address ?? "", notes: c.notes ?? "",
+                    customer_type: c.customer_type === "b2b" ? "b2b" : "retail", business_name: c.business_name ?? "",
+                    discount_pct: Number(c.discount_pct) > 0 ? String(c.discount_pct) : "", credit_limit: Number(c.credit_limit) > 0 ? String(c.credit_limit) : "",
+                  })}>Edit</Button>}
                 </TableCell>
               </TableRow>
             ))}
@@ -100,27 +127,62 @@ function Customers() {
   );
 }
 
-function EditDialog({ value, onClose }: { value: { id?: string; name: string; phone: string; address: string; notes: string }; onClose: () => void }) {
+function EditDialog({ value, onClose }: { value: CustForm; onClose: () => void }) {
   const qc = useQueryClient();
   const [f, setF] = useState(value);
+  const b2b = f.customer_type === "b2b";
   const save = useMutation({
     mutationFn: async () => {
       if (!f.name.trim()) throw new Error("Name is required");
-      const row = { name: f.name.trim(), phone: f.phone.trim() || null, address: f.address.trim() || null, notes: f.notes.trim() || null };
+      const disc = Number(f.discount_pct || 0), limit = Number(f.credit_limit || 0);
+      if (!(disc >= 0 && disc < 100)) throw new Error("Discount must be between 0 and 99%");
+      if (!(limit >= 0)) throw new Error("Credit limit can't be negative");
+      const base = { name: f.name.trim(), phone: f.phone.trim() || null, address: f.address.trim() || null, notes: f.notes.trim() || null };
+      const extra = { customer_type: f.customer_type, business_name: b2b ? f.business_name.trim() || null : null, discount_pct: b2b ? disc : 0, credit_limit: limit };
+      const row = { ...base, ...extra };
       const { error } = f.id ? await supabase.from("customers").update(row).eq("id", f.id) : await supabase.from("customers").insert(row);
+      if (error && /customer_type|business_name|discount_pct|credit_limit/.test(error.message)) {
+        throw new Error("B2B needs a one-time database update: run supabase/06_b2b_customers.sql in Supabase SQL Editor.");
+      }
       if (error) throw error;
     },
     onSuccess: () => { toast.success("Customer saved"); qc.invalidateQueries({ queryKey: ["customers"] }); onClose(); },
     onError: (e) => toast.error(errMsg(e)),
   });
+  const set = (k: keyof CustForm) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{f.id ? "Edit customer" : "Add customer"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{f.id ? "Edit customer" : b2b ? "Add B2B customer" : "Add customer"}</DialogTitle></DialogHeader>
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
-          {(["name", "phone", "address", "notes"] as const).map((k) => (
-            <div key={k}><Label className="capitalize" htmlFor={k}>{k}</Label><Input id={k} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>
-          ))}
+          <div className="grid grid-cols-2 gap-1 rounded-md border p-1">
+            {(["retail", "b2b"] as const).map((t) => (
+              <Button key={t} type="button" size="sm" variant={f.customer_type === t ? "secondary" : "ghost"} onClick={() => setF({ ...f, customer_type: t })}>
+                {t === "retail" ? "Retail customer" : "B2B / Wholesale"}
+              </Button>
+            ))}
+          </div>
+          {b2b && <div><Label htmlFor="biz">Shop / business name</Label><Input id="biz" value={f.business_name} onChange={set("business_name")} placeholder="e.g. Rahman Pharmacy" /></div>}
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label htmlFor="name">{b2b ? "Contact person" : "Name"}</Label><Input id="name" value={f.name} onChange={set("name")} /></div>
+            <div><Label htmlFor="phone">Phone</Label><Input id="phone" inputMode="tel" value={f.phone} onChange={set("phone")} placeholder="01XXXXXXXXX" /></div>
+          </div>
+          <div><Label htmlFor="address">Address</Label><Input id="address" value={f.address} onChange={set("address")} /></div>
+          {b2b && (
+            <div className="grid grid-cols-2 gap-3 rounded-md bg-muted/50 p-3">
+              <div>
+                <Label htmlFor="disc">Discount from MRP (%)</Label>
+                <Input id="disc" type="number" min={0} max={99} step="0.5" value={f.discount_pct} onChange={set("discount_pct")} placeholder="e.g. 30" />
+                <p className="mt-1 text-[11px] text-muted-foreground">Applied automatically in POS</p>
+              </div>
+              <div>
+                <Label htmlFor="limit">Credit (due) limit ৳</Label>
+                <Input id="limit" type="number" min={0} step="100" value={f.credit_limit} onChange={set("credit_limit")} placeholder="0 = no limit" />
+                <p className="mt-1 text-[11px] text-muted-foreground">POS warns above this</p>
+              </div>
+            </div>
+          )}
+          <div><Label htmlFor="notes">Notes</Label><Input id="notes" value={f.notes} onChange={set("notes")} /></div>
           <Button type="submit" className="w-full" disabled={save.isPending}>Save</Button>
         </form>
       </DialogContent>

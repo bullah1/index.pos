@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Printer } from "lucide-react";
+import { Copy, MessageCircle, MessageSquare, Printer, Share2 } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { settingsQuery, type Settings } from "@/lib/queries";
 import { amountInWords, bdDateTime, taka } from "@/lib/format";
@@ -16,10 +17,11 @@ type SaleData = {
     invoice_no: string; created_at: string; status: string;
     subtotal: number | string; item_discount: number | string; bill_discount: number | string; total: number | string;
     paid: number | string; due: number | string; returned_amount: number | string;
-    customers: { name: string; phone: string | null } | null;
+    customers: { name: string; phone: string | null; address?: string | null; business_name?: string | null; customer_type?: string } | null;
   };
   items: {
     id: string; medicine_name: string; qty: number | string; unit_price: number | string; discount: number | string; line_total: number | string;
+    list_price?: number | string | null;
     medicines?: { strength: string | null; sale_unit: string | null } | null;
   }[];
   payments: { id: string; kind: string; method: string; amount: number | string }[];
@@ -47,7 +49,7 @@ export function ReceiptDialog({
     enabled: !!saleId,
     queryFn: async (): Promise<SaleData> => {
       const [s, i, p] = await Promise.all([
-        supabase.from("sales").select("*, customers(name, phone)").eq("id", saleId!).single(),
+        supabase.from("sales").select("*, customers(*)").eq("id", saleId!).single(),
         supabase.from("sale_items").select("*, medicines(strength, sale_unit)").eq("sale_id", saleId!),
         supabase.from("sale_payments").select("*").eq("sale_id", saleId!).order("created_at"),
       ]);
@@ -65,6 +67,7 @@ export function ReceiptDialog({
             {fmt === "a4"
               ? <A4Invoice data={data} settings={settings} cashReceived={cashReceived} change={change} />
               : <ThermalReceipt data={data} settings={settings} cashReceived={cashReceived} change={change} />}
+            <SendBar data={data} settings={settings} />
             <div className="flex flex-wrap items-center justify-end gap-2">
               <div className="mr-auto flex rounded-md border p-0.5">
                 <Button variant={fmt === "thermal" ? "secondary" : "ghost"} size="sm" className="h-7" onClick={() => setFormat("thermal")}>Small receipt</Button>
@@ -137,6 +140,9 @@ function totalsOf(data: SaleData) {
 
 function A4Invoice({ data, settings, cashReceived, change }: Props) {
   const { s, discount, salePaid, refunds } = totalsOf(data);
+  // Show MRP when lines were sold below it (B2B / special price), so the buyer sees the saving.
+  const showMrp = data.items.some((it) => Number(it.list_price ?? 0) > Number(it.unit_price));
+  const mrpSaving = data.items.reduce((a, it) => a + Math.max(0, Number(it.list_price ?? it.unit_price) - Number(it.unit_price)) * Number(it.qty), 0);
   const cancelled = s.status === "cancelled";
   return (
     <div id="print-area" className="a4 relative rounded-md border bg-white p-6 text-[13px] leading-relaxed text-black">
@@ -157,8 +163,11 @@ function A4Invoice({ data, settings, cashReceived, change }: Props) {
       <div className="mt-3 flex flex-wrap justify-between gap-4">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Bill to</div>
-          <div className="font-semibold">{s.customers?.name ?? "Walk-in customer"}</div>
+          {s.customers?.business_name && <div className="font-semibold">{s.customers.business_name}</div>}
+          <div className={s.customers?.business_name ? "" : "font-semibold"}>{s.customers?.name ?? "Walk-in customer"}
+            {s.customers?.customer_type === "b2b" && <span className="ml-1.5 rounded border border-black px-1 text-[10px] font-bold">B2B</span>}</div>
           {s.customers?.phone && <div>{s.customers.phone}</div>}
+          {s.customers?.address && <div className="text-gray-700">{s.customers.address}</div>}
         </div>
         <div className="text-right">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Payment</div>
@@ -173,6 +182,7 @@ function A4Invoice({ data, settings, cashReceived, change }: Props) {
             <th className="border border-gray-300 px-2 py-1.5 text-center">#</th>
             <th className="border border-gray-300 px-2 py-1.5">Item</th>
             <th className="border border-gray-300 px-2 py-1.5 text-right">Qty</th>
+            {showMrp && <th className="border border-gray-300 px-2 py-1.5 text-right">MRP</th>}
             <th className="border border-gray-300 px-2 py-1.5 text-right">Rate</th>
             <th className="border border-gray-300 px-2 py-1.5 text-right">Discount</th>
             <th className="border border-gray-300 px-2 py-1.5 text-right">Amount</th>
@@ -184,6 +194,7 @@ function A4Invoice({ data, settings, cashReceived, change }: Props) {
               <td className="border border-gray-300 px-2 py-1 text-center">{i + 1}</td>
               <td className="border border-gray-300 px-2 py-1">{itemName(it)}</td>
               <td className="border border-gray-300 px-2 py-1 text-right whitespace-nowrap">{qtyText(it)}</td>
+              {showMrp && <td className="border border-gray-300 px-2 py-1 text-right text-gray-600">{taka(it.list_price ?? it.unit_price)}</td>}
               <td className="border border-gray-300 px-2 py-1 text-right">{taka(it.unit_price)}</td>
               <td className="border border-gray-300 px-2 py-1 text-right">{Number(it.discount) > 0 ? taka(it.discount) : "—"}</td>
               <td className="border border-gray-300 px-2 py-1 text-right">{taka(it.line_total)}</td>
@@ -198,6 +209,8 @@ function A4Invoice({ data, settings, cashReceived, change }: Props) {
           <div className="font-medium italic">{amountInWords(Number(s.total) - Number(s.returned_amount))}</div>
         </div>
         <div className="ml-auto w-64 space-y-0.5">
+          {showMrp && mrpSaving > 0 && <Line k="MRP value" v={taka(Number(s.subtotal) + mrpSaving)} />}
+          {showMrp && mrpSaving > 0 && <Line k="Trade discount" v={"−" + taka(mrpSaving)} />}
           <Line k="Subtotal" v={taka(s.subtotal)} />
           {discount > 0 && <Line k="Discount" v={"−" + taka(discount)} />}
           <div className="flex justify-between border-y-2 border-black py-1 text-base font-bold"><span>Total</span><span>{taka(s.total)}</span></div>
@@ -230,7 +243,7 @@ function ThermalReceipt({ data, settings, cashReceived, change }: Props) {
       <Dash />
       <div className="flex justify-between"><span>Invoice</span><b>{s.invoice_no}</b></div>
       <div className="flex justify-between"><span>Date</span><span>{bdDateTime(s.created_at)}</span></div>
-      <div className="flex justify-between gap-2"><span>Customer</span><span className="text-right">{s.customers?.name ?? "Walk-in"}{s.customers?.phone ? ` ${s.customers.phone}` : ""}</span></div>
+      <div className="flex justify-between gap-2"><span>Customer</span><span className="text-right">{s.customers?.business_name ? `${s.customers.business_name} (B2B)` : s.customers?.name ?? "Walk-in"}{s.customers?.phone ? ` ${s.customers.phone}` : ""}</span></div>
       <Dash />
       {data.items.map((it) => (
         <div key={it.id} className="mb-1">
@@ -266,6 +279,69 @@ function itemName(it: SaleData["items"][number]) {
 function qtyText(it: SaleData["items"][number]) {
   const u = it.medicines?.sale_unit;
   return `${Number(it.qty)}${u && u !== "pcs" ? " " + u : ""}`;
+}
+
+/** Plain-text invoice for WhatsApp / SMS / copy. */
+function invoiceText(data: SaleData, settings: Settings | undefined) {
+  const { s, discount } = totalsOf(data);
+  const L: string[] = [];
+  L.push(`*${settings?.pharmacy_name ?? "Invoice"}*`);
+  if (settings?.phone) L.push(`Phone: ${settings.phone}`);
+  L.push(`Invoice: ${s.invoice_no}`, `Date: ${bdDateTime(s.created_at)}`);
+  if (s.customers) L.push(`Customer: ${s.customers.business_name ? `${s.customers.business_name} (${s.customers.name})` : s.customers.name}`);
+  L.push("------------------------");
+  data.items.forEach((it, i) => L.push(`${i + 1}. ${itemName(it)}\n   ${qtyText(it)} x ${Number(it.unit_price).toFixed(2)} = ${Number(it.line_total).toFixed(2)}`));
+  L.push("------------------------");
+  if (discount > 0) L.push(`Discount: -${discount.toFixed(2)}`);
+  L.push(`*Total: Tk ${Number(s.total).toFixed(2)}*`);
+  const paid = data.payments.filter((p) => p.kind !== "refund");
+  for (const p of paid) L.push(`Paid (${METHOD[p.method] ?? p.method}): ${Number(p.amount).toFixed(2)}`);
+  if (Number(s.returned_amount) > 0) L.push(`Returned: -${Number(s.returned_amount).toFixed(2)}`);
+  if (Number(s.due) > 0) L.push(`*Due: Tk ${Number(s.due).toFixed(2)}*`);
+  if (s.status === "cancelled") L.push("*** CANCELLED ***");
+  if (settings?.invoice_footer) L.push("", settings.invoice_footer);
+  return L.join("\n");
+}
+
+/** 01XXXXXXXXX → 8801XXXXXXXXX (for WhatsApp links). */
+function bdPhone(p: string | null | undefined) {
+  const d = (p ?? "").replace(/\D/g, "");
+  if (/^01\d{9}$/.test(d)) return "88" + d;
+  if (/^8801\d{9}$/.test(d)) return d;
+  return "";
+}
+
+function SendBar({ data, settings }: { data: SaleData; settings: Settings | undefined }) {
+  const text = invoiceText(data, settings);
+  const phone = data.sale.customers?.phone ?? "";
+  const wa = bdPhone(phone);
+  const open = (url: string) => window.open(url, "_blank", "noopener");
+  return (
+    <div className="rounded-md border bg-muted/40 p-2">
+      <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+        Send to customer{phone ? ` · ${phone}` : " · no phone saved — you can pick the number in WhatsApp"}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" className="bg-[#25D366] text-white hover:bg-[#1ebe5b]" onClick={() => open(`https://wa.me/${wa}?text=${encodeURIComponent(text)}`)}>
+          <MessageCircle className="mr-1 h-4 w-4" />WhatsApp
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => { window.location.href = `sms:${phone}?body=${encodeURIComponent(text.replace(/\*/g, ""))}`; }}>
+          <MessageSquare className="mr-1 h-4 w-4" />SMS
+        </Button>
+        <Button size="sm" variant="outline" onClick={async () => {
+          try { await navigator.clipboard.writeText(text.replace(/\*/g, "")); toast.success("Invoice copied — paste it in Messenger or anywhere"); }
+          catch { toast.error("Could not copy"); }
+        }}>
+          <Copy className="mr-1 h-4 w-4" />Copy
+        </Button>
+        {typeof navigator !== "undefined" && "share" in navigator && (
+          <Button size="sm" variant="outline" onClick={() => navigator.share({ title: data.sale.invoice_no, text: text.replace(/\*/g, "") }).catch(() => {})}>
+            <Share2 className="mr-1 h-4 w-4" />Share
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Dash() { return <div className="my-1.5 border-t border-dashed border-black" />; }

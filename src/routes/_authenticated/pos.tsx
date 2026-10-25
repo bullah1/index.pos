@@ -85,6 +85,30 @@ function PosPage() {
 
   const medById = useMemo(() => new Map(meds.map((m) => [m.id, m])), [meds]);
 
+  // B2B customers get their discount from MRP on every line automatically.
+  const cust = customers.find((c) => c.id === customerId);
+  const isB2B = cust?.customer_type === "b2b";
+  const b2bDisc = isB2B ? Number(cust?.discount_pct ?? 0) : 0;
+  const b2bPrice = (list: number) => Math.round(list * (1 - b2bDisc / 100) * 100) / 100;
+  const [autoPriced, setAutoPriced] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setCart((c) => c.map((l) => {
+      if (b2bDisc > 0) return { ...l, price: Math.round(l.unit_price * (1 - b2bDisc / 100) * 100) / 100 };
+      if (autoPriced.has(l.medicine_id)) { const { price: _p, ...rest } = l; return rest; }
+      return l;
+    }));
+    setAutoPriced(b2bDisc > 0 ? new Set(cart.map((l) => l.medicine_id)) : new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId, b2bDisc]);
+  const { data: dues } = useQuery({
+    queryKey: ["customer-dues"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("customer_dues");
+      if (error) throw error;
+      return new Map(data.map((d) => [d.customer_id, Number(d.due)]));
+    },
+  });
+
   useEffect(() => {
     if (!edit || meds.length === 0 || editing?.id === edit) return;
     let stop = false;
@@ -187,8 +211,9 @@ function PosPage() {
     setCart((c) => {
       const ex = c.find((l) => l.medicine_id === medId);
       if (ex) return c.map((l) => (l.medicine_id === medId ? { ...l, qty: Math.min(l.qty + 1, avail), available: avail } : l));
-      return [...c, { medicine_id: m.id, name: `${m.name}${m.strength ? " " + m.strength : ""}`, qty: 1, unit_price: price, discount: 0, available: avail }];
+      return [...c, { medicine_id: m.id, name: `${m.name}${m.strength ? " " + m.strength : ""}`, qty: 1, unit_price: price, discount: 0, available: avail, ...(b2bDisc > 0 ? { price: b2bPrice(price) } : {}) }];
     });
+    if (b2bDisc > 0) setAutoPriced((s0) => new Set(s0).add(medId));
     setQ("");
     setHi(0);
     searchRef.current?.focus();
@@ -263,6 +288,10 @@ function PosPage() {
     const hasCustomer = customerId !== WALKIN;
     const err = validateCart(priced, bill, pays, hasCustomer);
     if (err) { toast.error(err); return; }
+    if (!isMgr && Number(cust?.credit_limit ?? 0) > 0 && totals.due > 0 && (dues?.get(customerId) ?? 0) + totals.due > Number(cust?.credit_limit)) {
+      toast.error("This sale goes over the customer's credit limit. Ask a manager.");
+      return;
+    }
     if (!isMgr) {
       const low = priced.find((l) => l.price != null && l.price < maxCost(l));
       if (low) { toast.error(`Price for ${low.name} is below cost. Only a manager can sell below cost.`); return; }
@@ -294,6 +323,7 @@ function PosPage() {
     qc.invalidateQueries({ queryKey: ["sales"] });
     qc.invalidateQueries({ queryKey: ["report"] });
     qc.invalidateQueries({ queryKey: ["customer-dues"] });
+    qc.invalidateQueries({ queryKey: ["sales-payments"] });
     setReceipt({ id: r.id, cash: cashGiven > 0 ? cashGiven : undefined, change: totals.change > 0 ? totals.change : undefined });
     reset();
   }
@@ -301,7 +331,12 @@ function PosPage() {
   const customerOptions = useMemo(
     () => [
       { value: WALKIN, label: "Walk-in customer" },
-      ...customers.map((c) => ({ value: c.id, label: c.name, hint: c.phone ?? undefined, keywords: c.phone ?? "" })),
+      ...customers.map((c) => ({
+        value: c.id,
+        label: c.customer_type === "b2b" ? `${c.business_name || c.name} · B2B` : c.name,
+        hint: [c.customer_type === "b2b" && c.business_name ? c.name : null, c.phone].filter(Boolean).join(" · ") || undefined,
+        keywords: `${c.phone ?? ""} ${c.business_name ?? ""} ${c.name}`,
+      })),
     ],
     [customers],
   );
@@ -512,6 +547,22 @@ function PosPage() {
             </Button>
           </div>
         </div>
+
+        {isB2B && (
+          <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+            <div className="font-semibold">B2B customer{b2bDisc > 0 ? ` · ${b2bDisc}% off MRP applied` : ""}</div>
+            <div>Current due {taka(dues?.get(customerId) ?? 0)}{Number(cust?.credit_limit) > 0 ? ` · limit ${taka(cust?.credit_limit)}` : ""}</div>
+          </div>
+        )}
+        {(() => {
+          const limit = Number(cust?.credit_limit ?? 0);
+          const after = (dues?.get(customerId) ?? 0) + totals.due;
+          return limit > 0 && totals.due > 0 && after > limit ? (
+            <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+              Due will be {taka(after)} — above the credit limit {taka(limit)}.{!isMgr && " Only a manager can allow this."}
+            </div>
+          ) : null;
+        })()}
 
         <div className="space-y-1 text-sm">
           <Line k="Subtotal" v={taka(totals.subtotal)} />
