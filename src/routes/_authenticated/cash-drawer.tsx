@@ -89,6 +89,24 @@ function CashDrawer() {
     onError: (e) => toast.error(errMsg(e)),
   });
 
+  const reopen = useMutation({
+    mutationFn: async () => {
+      const id = data.data?.drawers.find((d) => d.user_id === user.id)?.id;
+      if (!id) throw new Error("No drawer for today");
+      const { error } = await supabase.rpc("cash_drawer_reopen" as never, { p: { id } } as never);
+      if (error) {
+        if (error.code === "PGRST202" || /could not find the function/i.test(error.message)) throw new Error("Reopen needs a one-time database update: run supabase/08_drawer_reopen.sql in Supabase.");
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      toast.success("Drawer reopened");
+      qc.invalidateQueries({ queryKey: ["cash-drawer"] });
+      qc.invalidateQueries({ queryKey: ["my-drawer"] });
+    },
+    onError: (e) => toast.error(errMsg(e)),
+  });
+
   const rows = data.data?.rows ?? [];
   const sum = drawerSummary(rows);
   const mine = myDrawerRow(rows, user.id);
@@ -131,6 +149,11 @@ function CashDrawer() {
             </div>
             {openErr && <div className="mt-1 text-xs font-medium text-destructive">Could not open: {openErr}</div>}
           </div>
+          {closed && isMgr && (
+            <Button variant="outline" className="h-10" disabled={reopen.isPending} onClick={() => reopen.mutate()}>
+              {reopen.isPending ? "Reopening…" : "Reopen drawer"}
+            </Button>
+          )}
           {!closed && (
             <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); openDrawer.mutate(); }}>
               <div>
@@ -173,7 +196,11 @@ function CashDrawer() {
       <section className="rounded-xl border bg-card p-5">
         <h2 className="font-semibold">{closed ? "Counted" : "Count the cash"}</h2>
         {!closed ? (
-          <form className="mt-3 space-y-3" onSubmit={(e) => { e.preventDefault(); if (day === today) closeDrawer.mutate(); }}>
+          <form className="mt-3 space-y-3" onSubmit={(e) => {
+            e.preventDefault();
+            if (day !== today) return;
+            if (window.confirm(`Close today's drawer with ${counted.trim() === "" ? "৳0" : "৳" + counted} counted? Do this only at the end of the day.`)) closeDrawer.mutate();
+          }}>
             <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
               <div>
                 <Label htmlFor="ct">Cash you counted (৳)</Label>
