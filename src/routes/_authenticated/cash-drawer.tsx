@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ArrowDownLeft, ArrowUpRight, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { bdDateTime, bdToday, errMsg, taka } from "@/lib/format";
 import { drawerSummary, myDrawerRow } from "@/lib/cash";
 import { addDays, cashDayQuery } from "@/lib/cashQuery";
+import { useMyDrawer } from "@/components/DrawerGate";
 import { PAY_METHODS } from "@/lib/pos";
 
 export const Route = createFileRoute("/_authenticated/cash-drawer")({
@@ -39,6 +40,11 @@ function CashDrawer() {
   const [note, setNote] = useState("");
 
   const data = useQuery(cashDayQuery(day, user.id, isMgr));
+  // When the drawer opens by itself in the background, reload this page's numbers.
+  const myDrawer = useMyDrawer(user.id);
+  const drawerStatus = myDrawer.data?.status;
+  useEffect(() => { if (drawerStatus && day === today) void data.refetch(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawerStatus]);
 
   const openDrawer = useMutation({
     mutationFn: async () => {
@@ -58,10 +64,15 @@ function CashDrawer() {
 
   const closeDrawer = useMutation({
     mutationFn: async () => {
-      const rec = data.data?.drawers.find((d) => d.user_id === user.id);
-      if (!rec) throw new Error("Open the drawer first");
       if (counted.trim() === "" || !(Number(counted) >= 0)) throw new Error("Enter the counted cash");
-      const { error } = await supabase.rpc("cash_drawer_close", { p: { id: rec.id, counted: Number(counted), note } as never });
+      let id = data.data?.drawers.find((d) => d.user_id === user.id)?.id;
+      if (!id) {
+        // No drawer yet today: open it (opening ৳0) and close it in one go.
+        const o = await supabase.rpc("cash_drawer_open", { p: { date: day, opening: 0 } as never });
+        if (o.error) throw o.error;
+        id = (o.data as { id: string }).id;
+      }
+      const { error } = await supabase.rpc("cash_drawer_close", { p: { id, counted: Number(counted), note } as never });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -127,7 +138,7 @@ function CashDrawer() {
       <section className="rounded-xl border bg-card p-5">
         <h2 className="font-semibold">{closed ? "Counted" : "Count the cash"}</h2>
         {!closed ? (
-          <form className="mt-3 space-y-3" onSubmit={(e) => { e.preventDefault(); if (myRec && day === today) closeDrawer.mutate(); }}>
+          <form className="mt-3 space-y-3" onSubmit={(e) => { e.preventDefault(); if (day === today) closeDrawer.mutate(); }}>
             <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
               <div>
                 <Label htmlFor="ct">Cash you counted (৳)</Label>
@@ -137,14 +148,25 @@ function CashDrawer() {
                 <Label htmlFor="cn">Note (optional)</Label>
                 <Input id="cn" value={note} onChange={(e) => setNote(e.target.value)} className="h-11" placeholder="e.g. ৳50 short" />
               </div>
-              <Button type="submit" className="h-11" disabled={closeDrawer.isPending || !myRec || day !== today}>Save count &amp; close day</Button>
+              <Button type="submit" className="h-11" disabled={closeDrawer.isPending || day !== today}>Save count &amp; close day</Button>
             </div>
             {counted.trim() !== "" && (
               <div className={"rounded-md px-3 py-2 text-sm font-medium " + (Math.abs(diff) < 0.01 ? "bg-emerald-50 text-emerald-700" : diff > 0 ? "bg-sky-50 text-sky-700" : "bg-rose-50 text-rose-700")}>
                 {Math.abs(diff) < 0.01 ? "Matches exactly ✓" : diff > 0 ? `${taka(diff)} extra in the drawer` : `${taka(-diff)} short`}
               </div>
             )}
-            {!myRec && day === today && <p className="text-xs text-muted-foreground">The drawer opens by itself with the first sale today.</p>}
+            {!myRec && day === today && (
+              <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+                <div>
+                  <Label htmlFor="op0" className="text-xs">Cash in the drawer at the start of the day (৳)</Label>
+                  <Input id="op0" type="number" inputMode="decimal" min="0" step="0.01" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" className="w-48" />
+                </div>
+                <Button type="button" variant="outline" disabled={openDrawer.isPending} onClick={() => { if (opening.trim() === "") setOpening("0"); setTimeout(() => openDrawer.mutate(), 0); }}>
+                  {openDrawer.isPending ? "Opening…" : "Open drawer"}
+                </Button>
+                <p className="w-full text-xs text-muted-foreground">Optional — the drawer also opens by itself with the first sale.</p>
+              </div>
+            )}
             {day !== today && !myRec && <p className="text-xs text-muted-foreground">No drawer was used on this day.</p>}
           </form>
         ) : (

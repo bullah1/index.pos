@@ -73,10 +73,13 @@ export function useAutoOpenDrawer(userId: string) {
     if (data?.status !== "none" || tried.current) return;
     tried.current = true;
     void supabase.rpc("cash_drawer_open", { p: { opening: 0 } as never }).then(({ error }) => {
-      if (!error) {
-        qc.invalidateQueries({ queryKey: ["my-drawer"] });
-        qc.invalidateQueries({ queryKey: ["cash-drawer"] });
+      if (error) {
+        // Show why, once, instead of failing silently.
+        toast.error(`Cash drawer could not open: ${errMsg(error)}`);
+        return;
       }
+      void qc.refetchQueries({ queryKey: ["my-drawer"] });
+      void qc.refetchQueries({ queryKey: ["cash-drawer"] });
     });
   }, [data?.status, qc]);
 }
