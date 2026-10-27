@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowDownLeft, ArrowUpRight, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,6 +40,8 @@ function CashDrawer() {
   const [note, setNote] = useState("");
 
   const data = useQuery(cashDayQuery(day, user.id, isMgr));
+  const [openErr, setOpenErr] = useState<string | null>(null);
+  const myRecRef = useRef<{ opening: number | string } | null>(null);
   // When the drawer opens by itself in the background, reload this page's numbers.
   const myDrawer = useMyDrawer(user.id);
   const drawerStatus = myDrawer.data?.status;
@@ -48,18 +50,20 @@ function CashDrawer() {
 
   const openDrawer = useMutation({
     mutationFn: async () => {
-      if (opening.trim() === "" || !(Number(opening) >= 0)) throw new Error("Enter the opening cash (0 if none)");
-      const { error } = await supabase.rpc("cash_drawer_open", { p: { date: day, opening: Number(opening), note } as never });
+      const amt = opening.trim() === "" ? (myRecRef.current ? Number(myRecRef.current.opening) : 0) : Number(opening);
+      if (!(amt >= 0)) throw new Error("Opening cash can't be negative");
+      const { error } = await supabase.rpc("cash_drawer_open", { p: { date: day, opening: amt } as never });
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Drawer opened");
+      setOpenErr(null);
+      toast.success(myRecRef.current ? "Opening cash saved" : "Drawer opened");
       setOpening("");
       setNote("");
       qc.invalidateQueries({ queryKey: ["cash-drawer"] });
       qc.invalidateQueries({ queryKey: ["my-drawer"] });
     },
-    onError: (e) => toast.error(errMsg(e)),
+    onError: (e) => { setOpenErr(errMsg(e)); toast.error(errMsg(e)); },
   });
 
   const closeDrawer = useMutation({
@@ -93,6 +97,8 @@ function CashDrawer() {
 
   const byMethod = data.data?.byMethod ?? new Map<string, number>();
   const closed = myRec?.closed_at != null;
+  myRecRef.current = myRec;
+  const openedAt = (myRec as { created_at?: string } | null)?.created_at;
   const diff = Number(counted) - (mine?.expected ?? 0);
 
   return (
@@ -110,6 +116,35 @@ function CashDrawer() {
       </div>
 
       {data.error && <p className="text-sm text-destructive">Could not load the drawer: {errMsg(data.error)}</p>}
+
+      {day === today && (
+        <section className={"flex flex-wrap items-center gap-3 rounded-xl border p-4 " + (closed ? "bg-muted/50" : myRec ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50")}>
+          <div className="mr-auto">
+            <div className={"flex items-center gap-2 font-semibold " + (closed ? "" : myRec ? "text-emerald-800" : "text-amber-900")}>
+              <span className={"h-2.5 w-2.5 rounded-full " + (closed ? "bg-slate-400" : myRec ? "bg-emerald-500" : "bg-amber-500")} />
+              {closed ? "Today's drawer is closed" : myRec ? "Drawer is open" : data.isLoading ? "Checking drawer…" : "Drawer is not open yet"}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {closed ? `Counted and closed ${bdDateTime(myRec!.closed_at!)}. Sales still work.`
+                : myRec ? `Opened ${openedAt ? bdDateTime(openedAt).split(", ")[1] : ""} · opening cash ${taka(myRec.opening)}`
+                : "Enter the cash you have in the drawer now (0 if none) and press Open."}
+            </div>
+            {openErr && <div className="mt-1 text-xs font-medium text-destructive">Could not open: {openErr}</div>}
+          </div>
+          {!closed && (
+            <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); openDrawer.mutate(); }}>
+              <div>
+                <Label htmlFor="op" className="text-xs">Opening cash (৳)</Label>
+                <Input id="op" type="number" inputMode="decimal" min="0" step="0.01" value={opening} onChange={(e) => setOpening(e.target.value)}
+                  placeholder={myRec ? String(Number(myRec.opening)) : "0"} className="h-10 w-36 bg-white" />
+              </div>
+              <Button type="submit" className="h-10" disabled={openDrawer.isPending}>
+                {openDrawer.isPending ? "Saving…" : myRec ? "Save" : "Open drawer"}
+              </Button>
+            </form>
+          )}
+        </section>
+      )}
 
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 p-6 text-white">
         <Wallet className="absolute -right-6 -top-6 h-40 w-40 text-white/5" />
@@ -155,18 +190,6 @@ function CashDrawer() {
                 {Math.abs(diff) < 0.01 ? "Matches exactly ✓" : diff > 0 ? `${taka(diff)} extra in the drawer` : `${taka(-diff)} short`}
               </div>
             )}
-            {!myRec && day === today && (
-              <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
-                <div>
-                  <Label htmlFor="op0" className="text-xs">Cash in the drawer at the start of the day (৳)</Label>
-                  <Input id="op0" type="number" inputMode="decimal" min="0" step="0.01" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" className="w-48" />
-                </div>
-                <Button type="button" variant="outline" disabled={openDrawer.isPending} onClick={() => { if (opening.trim() === "") setOpening("0"); setTimeout(() => openDrawer.mutate(), 0); }}>
-                  {openDrawer.isPending ? "Opening…" : "Open drawer"}
-                </Button>
-                <p className="w-full text-xs text-muted-foreground">Optional — the drawer also opens by itself with the first sale.</p>
-              </div>
-            )}
             {day !== today && !myRec && <p className="text-xs text-muted-foreground">No drawer was used on this day.</p>}
           </form>
         ) : (
@@ -176,15 +199,6 @@ function CashDrawer() {
             <MiniStat k="Difference" v={taka(mine?.difference)} bad={(mine?.difference ?? 0) !== 0} />
             <p className="text-xs text-muted-foreground sm:col-span-3">Closed {bdDateTime(myRec!.closed_at!)}. Sales after closing are still allowed.</p>
           </div>
-        )}
-        {myRec && !closed && day === today && (
-          <details className="mt-4 text-sm">
-            <summary className="cursor-pointer text-muted-foreground">Started the day with cash in the drawer? Set opening cash</summary>
-            <form className="mt-2 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); openDrawer.mutate(); }}>
-              <Input type="number" step="0.01" min="0" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder={String(mine?.opening ?? 0)} className="w-40" />
-              <Button type="submit" variant="outline" disabled={openDrawer.isPending}>Save opening cash</Button>
-            </form>
-          </details>
         )}
       </section>
 

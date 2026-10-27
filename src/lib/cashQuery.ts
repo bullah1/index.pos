@@ -21,7 +21,7 @@ export const cashDayQuery = (day: string, userId: string, isMgr: boolean) =>
       const [sp, cp, dr, pr] = await Promise.all([
         supabase.from("sale_payments").select("created_by, amount, kind, method").gte("created_at", from).lt("created_at", to).limit(5000),
         cpQuery,
-        supabase.from("cash_drawers").select("id, user_id, opening, counted, note, closed_at").eq("drawer_date", day).limit(500),
+        supabase.from("cash_drawers").select("id, user_id, opening, counted, note, closed_at, created_at").eq("drawer_date", day).limit(500),
         supabase.from("profiles").select("id, full_name").limit(500),
       ]);
       if (sp.error) throw sp.error;
